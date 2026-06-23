@@ -1,43 +1,6 @@
+// src/utils/markdownGenerator.js
 import { SOCIAL_PLATFORMS, buildSocialUrl } from './socialPlatforms';
-
-const SKILLS_CATEGORIES = {
-  "Frontend": {
-    color: "0ea5e9",
-    skills: ['HTML5', 'CSS3', 'JavaScript', 'TypeScript', 'React', 'Next.js', 'Vue', 'Nuxt.js', 'Angular', 'Svelte', 'Tailwind', 'Sass', 'Redux']
-  },
-  "Backend": {
-    color: "10b981",
-    skills: ['Python', 'Java', 'C++', 'C#', 'Go', 'Rust', 'Node.js', 'Django', 'Flask', 'FastAPI', 'Spring', 'Express', 'Ruby on Rails', 'PHP']
-  },
-  "Data Science & AI": {
-    color: "f43f5e",
-    skills: ['TensorFlow', 'PyTorch', 'Keras', 'Scikit-learn', 'Pandas', 'NumPy', 'OpenCV', 'Jupyter', 'Matplotlib', 'Hugging Face']
-  },
-  "Database & Cloud": {
-    color: "f59e0b",
-    skills: ['PostgreSQL', 'MongoDB', 'MySQL', 'Redis', 'SQLite', 'Docker', 'Kubernetes', 'AWS', 'Google Cloud', 'Azure', 'Firebase', 'Supabase']
-  },
-  "Tools & Other": {
-    color: "8b5cf6",
-    skills: ['Linux', 'Git', 'GitHub', 'GitLab', 'Figma', 'Bash', 'Postman', 'Nginx', 'GraphQL', 'Vite']
-  }
-};
-
-const getLogoName = (skill) => {
-  const specialCases = {
-    'Next.js': 'nextdotjs',
-    'Nuxt.js': 'nuxtdotjs',
-    'Vue': 'vuedotjs',
-    'Node.js': 'nodedotjs',
-    'C++': 'cplusplus',
-    'C#': 'csharp',
-    'Hugging Face': 'huggingface',
-    'Google Cloud': 'googlecloud',
-    'Scikit-learn': 'scikitlearn',
-    'Ruby on Rails': 'rubyonrails'
-  };
-  return specialCases[skill] || skill.toLowerCase().replace(/ /g, '');
-};
+import { SKILLS_CATEGORIES, getLogoName } from './skills';
 
 const socialBadge = (platform, value, style) => {
   const url = buildSocialUrl(platform, value);
@@ -47,8 +10,7 @@ const socialBadge = (platform, value, style) => {
 };
 
 // ---------------------------------------------------------------------------
-// Section builders. Each one renders differently depending on formData.template
-// so the same drag-and-drop sections work across all templates.
+// Section builders
 // ---------------------------------------------------------------------------
 
 const buildHeader = ({ name, subtitle, template }) => {
@@ -89,17 +51,17 @@ const buildDescription = ({ description, template }) => {
 
 const buildAbout = ({ bio, currentLearning, template }) => {
   if (!bio && !currentLearning) return '';
-  const heading = template === 'minimalist' ? '## About\n\n' : '## 🙋\u200d♂️ About Me\n\n';
+  const heading = template === 'minimalist' ? '## About\n\n' : '## 🙋‍♂️ About Me\n\n';
   let s = heading;
   if (bio) {
     s += template === 'minimalist'
       ? `- Working on: **${bio}**\n`
-      : `- 🔭 I\u2019m currently working on **${bio}**\n`;
+      : `- 🔭 I'm currently working on **${bio}**\n`;
   }
   if (currentLearning) {
     s += template === 'minimalist'
       ? `- Learning: **${currentLearning}**\n`
-      : `- 🌱 I\u2019m currently learning **${currentLearning}**\n`;
+      : `- 🌱 I'm currently learning **${currentLearning}**\n`;
   }
   s += `\n`;
   return s;
@@ -110,7 +72,7 @@ const buildSkills = ({ skills, template }) => {
   let s = template === 'minimalist' ? `## Stack\n\n` : `## 🛠 Tech Stack\n\n`;
 
   for (const [category, data] of Object.entries(SKILLS_CATEGORIES)) {
-    const categorySkills = skills.filter((s2) => data.skills.includes(s2));
+    const categorySkills = skills.filter((sk) => data.skills.includes(sk));
     if (categorySkills.length === 0) continue;
 
     if (template === 'minimalist') {
@@ -120,10 +82,14 @@ const buildSkills = ({ skills, template }) => {
 
     s += `### ${category}\n`;
     const badgeStyle = template === 'creative' ? 'flat-square' : 'for-the-badge';
+
     categorySkills.forEach((skill) => {
       const logo = getLogoName(skill);
-      const encodedSkill = encodeURIComponent(skill).replace(/-/g, '--');
-      s += `![${skill}](https://img.shields.io/badge/${encodedSkill}-${data.color}?style=${badgeStyle}&logo=${logo}&logoColor=white) `;
+      // ✅ Fix: escape '--' separators for shields.io BEFORE encodeURIComponent,
+      //    then encode the whole thing so spaces/special chars are safe.
+      const shieldsLabel = skill.replace(/-/g, '--').replace(/\s/g, '_');
+      const encodedSkill = encodeURIComponent(shieldsLabel);
+      s += `![${skill}](https://img.shields.io/badge/${encodedSkill}-${data.badgeColor}?style=${badgeStyle}&logo=${logo}&logoColor=white) `;
     });
     s += `\n\n`;
   }
@@ -157,6 +123,53 @@ const buildSocial = ({ socialLinks, template }) => {
   });
   s += `\n`;
   if (wrapCenter) s += `</p>\n`;
+  s += `\n`;
+  return s;
+};
+
+const buildProjects = ({ projects, template }) => {
+  if (!projects || projects.length === 0) return '';
+
+  const heading = template === 'minimalist'
+    ? '## Projects\n\n'
+    : '## 🚀 Projects\n\n';
+
+  let s = heading;
+
+  if (template === 'minimalist') {
+    projects.forEach(({ name, description, url, tech }) => {
+      if (!name) return;
+      const title = url ? `[${name}](${url})` : name;
+      s += `**${title}**`;
+      if (tech) s += ` — \`${tech}\``;
+      s += `\n`;
+      if (description) s += `${description}\n`;
+      s += `\n`;
+    });
+    return s;
+  }
+
+  if (template === 'creative') {
+    s += `<div align="center">\n\n`;
+    projects.forEach(({ name, description, url, tech }) => {
+      if (!name) return;
+      s += `### ${url ? `[${name}](${url})` : name}\n`;
+      if (description) s += `<p>${description}</p>\n`;
+      if (tech) s += `<p><em>${tech}</em></p>\n`;
+      s += `\n`;
+    });
+    s += `</div>\n\n`;
+    return s;
+  }
+
+  // modern (default) — card-style table
+  s += `| Project | Description | Tech |\n`;
+  s += `|--------|-------------|------|\n`;
+  projects.forEach(({ name, description, url, tech }) => {
+    if (!name) return;
+    const title = url ? `[${name}](${url})` : name;
+    s += `| **${title}** | ${description || '—'} | ${tech || '—'} |\n`;
+  });
   s += `\n`;
   return s;
 };
@@ -198,12 +211,13 @@ const buildFooter = ({ template, githubUsername }) => {
 };
 
 const SECTION_BUILDERS = {
-  header: buildHeader,
+  header:      buildHeader,
   description: buildDescription,
-  about: buildAbout,
-  skills: buildSkills,
-  social: buildSocial,
-  stats: buildStats,
+  about:       buildAbout,
+  skills:      buildSkills,
+  social:      buildSocial,
+  projects:    buildProjects,
+  stats:       buildStats,
 };
 
 export const generateMarkdown = (formData) => {

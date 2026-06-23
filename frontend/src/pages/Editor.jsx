@@ -1,3 +1,4 @@
+// src/pages/Editor.jsx
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -10,46 +11,50 @@ import SocialLinksPicker from '../components/SocialLinksPicker';
 import TemplateSelector from '../components/TemplateSelector';
 
 const SECTION_NAMES = {
-  header: 'Header & Title',
+  header:      'Header & Title',
   description: 'Description',
-  about: 'About Me',
-  skills: 'Tech Stack',
-  social: 'Social Links',
-  stats: 'GitHub Stats'
+  about:       'About Me',
+  skills:      'Tech Stack',
+  social:      'Social Links',
+  projects:    'Projects',
+  stats:       'GitHub Stats',
 };
 
+const EMPTY_PROJECT = { name: '', description: '', url: '', tech: '' };
+
 const DEFAULT_FORM_DATA = {
-  name: '',
-  subtitle: 'A passionate developer',
-  description: '',
-  bio: '',
+  name:            '',
+  subtitle:        'A passionate developer',
+  description:     '',
+  bio:             '',
   currentLearning: '',
-  portfolio: '',
-  email: '',
-  githubUsername: '',
-  skills: ['React', 'JavaScript', 'Python'],
+  portfolio:       '',
+  email:           '',
+  githubUsername:  '',
+  skills:          ['React', 'JavaScript', 'Python'],
   socialLinks: {
-    github: '',
-    linkedin: '',
-    twitter: '',
+    github:    '',
+    linkedin:  '',
+    twitter:   '',
     instagram: '',
-    youtube: '',
-    devto: '',
-    website: '',
-    email: '',
+    youtube:   '',
+    devto:     '',
+    website:   '',
+    email:     '',
   },
+  projects:  [],
   showStats: true,
-  theme: 'radical',
-  template: DEFAULT_TEMPLATE_ID,
-  sections: ['header', 'description', 'about', 'skills', 'social', 'stats']
+  theme:     'radical',
+  template:  DEFAULT_TEMPLATE_ID,
+  sections:  ['header', 'description', 'about', 'skills', 'projects', 'social', 'stats'],
 };
 
 const Editor = () => {
-  const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
-  const [markdown, setMarkdown] = useState('');
+  const [formData, setFormData]           = useState(DEFAULT_FORM_DATA);
+  const [markdown, setMarkdown]           = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // 1. Check auth state + prefill from the GitHub user stored at login time.
+  // 1. Check auth + prefill from stored GitHub user
   useEffect(() => {
     const authenticated = isLoggedIn();
     setIsAuthenticated(authenticated);
@@ -58,10 +63,10 @@ const Editor = () => {
     if (userData) {
       setFormData((prev) => ({
         ...prev,
-        name: userData.name || userData.first_name || prev.name,
+        name:          userData.name || userData.first_name || prev.name,
         githubUsername: userData.username || userData.github_username || prev.githubUsername,
-        description: userData.bio || prev.description,
-        email: userData.email || prev.email,
+        description:   userData.bio || prev.description,
+        email:         userData.email || prev.email,
         socialLinks: {
           ...prev.socialLinks,
           github: prev.socialLinks.github || userData.username || '',
@@ -70,30 +75,53 @@ const Editor = () => {
     }
   }, []);
 
-  // 2. Guests only get the free "modern" template -- guard against a stale
-  //    selection if someone logs out mid-session.
+  // 2. Guard locked templates for guests
   useEffect(() => {
     if (!isAuthenticated && formData.template !== DEFAULT_TEMPLATE_ID) {
       setFormData((prev) => ({ ...prev, template: DEFAULT_TEMPLATE_ID }));
     }
   }, [isAuthenticated, formData.template]);
 
-  // 3. Regenerate markdown whenever the form changes.
+  // 3. Regenerate markdown on every form change
   useEffect(() => {
-    const md = generateMarkdown(formData);
-    setMarkdown(md);
+    setMarkdown(generateMarkdown(formData));
   }, [formData]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }));
+  };
+
+  // ── Projects helpers ──────────────────────────────────────────────────────
+  const addProject = () => {
+    setFormData((prev) => ({
+      ...prev,
+      projects: [...prev.projects, { ...EMPTY_PROJECT }],
+    }));
+  };
+
+  const updateProject = (index, field, value) => {
+    setFormData((prev) => {
+      const updated = prev.projects.map((p, i) =>
+        i === index ? { ...p, [field]: value } : p
+      );
+      return { ...prev, projects: updated };
     });
   };
 
+  const removeProject = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      projects: prev.projects.filter((_, i) => i !== index),
+    }));
+  };
+
+  // ── Drag-and-drop section reorder ─────────────────────────────────────────
   const handleDragStart = (e, index) => {
-    e.dataTransfer.setData("dragIndex", index);
+    e.dataTransfer.setData('dragIndex', index);
   };
 
   const handleDragOver = (e) => {
@@ -101,48 +129,52 @@ const Editor = () => {
   };
 
   const handleDrop = (e, dropIndex) => {
-    const dragIndex = Number(e.dataTransfer.getData("dragIndex"));
+    const dragIndex = Number(e.dataTransfer.getData('dragIndex'));
     const newSections = [...formData.sections];
-    const draggedItem = newSections.splice(dragIndex, 1)[0];
-    newSections.splice(dropIndex, 0, draggedItem);
-
-    setFormData({ ...formData, sections: newSections });
+    const [dragged] = newSections.splice(dragIndex, 1);
+    newSections.splice(dropIndex, 0, dragged);
+    setFormData((prev) => ({ ...prev, sections: newSections }));
   };
 
+  // ── Export actions ────────────────────────────────────────────────────────
   const handleCopy = () => {
     navigator.clipboard.writeText(markdown);
-    alert('Markdown code copied to clipboard! ✅');
+    alert('Markdown copied to clipboard! ✅');
   };
 
   const handleDownload = () => {
-    const element = document.createElement("a");
-    const file = new Blob([markdown], { type: 'text/markdown' });
-    element.href = URL.createObjectURL(file);
-    element.download = "README.md";
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }));
+    a.download = 'README.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   return (
     <div className="container-fluid px-4 fade-in-up mb-5" style={{ paddingTop: '90px' }}>
       <div className="row g-4 h-100">
 
-        {/* Left column: settings */}
+        {/* ── Left: settings panel ── */}
         <div className="col-lg-5">
-          <div className="card shadow-sm border-0 h-100 p-4 overflow-auto" style={{ backgroundColor: 'var(--glass-bg)', backdropFilter: 'blur(10px)', maxHeight: '85vh' }}>
+          <div
+            className="card shadow-sm border-0 h-100 p-4 overflow-auto"
+            style={{ backgroundColor: 'var(--glass-bg)', backdropFilter: 'blur(10px)', maxHeight: '85vh' }}
+          >
             <h4 className="fw-bold mb-4">✍️ Customize Profile</h4>
 
             <form>
+              {/* Template */}
               <div className="mb-4">
                 <h6 className="fw-bold text-primary mb-3"><i className="bi bi-palette"></i> Template</h6>
                 <TemplateSelector
                   selected={formData.template}
                   isAuthenticated={isAuthenticated}
-                  onChange={(template) => setFormData({ ...formData, template })}
+                  onChange={(template) => setFormData((prev) => ({ ...prev, template }))}
                 />
               </div>
 
+              {/* Basic Info */}
               <div className="mb-4">
                 <h6 className="fw-bold text-primary mb-3"><i className="bi bi-person"></i> Basic Info</h6>
                 <div className="mb-3">
@@ -155,21 +187,21 @@ const Editor = () => {
                 </div>
               </div>
 
+              {/* Description */}
               <div className="mb-4">
                 <h6 className="fw-bold text-primary mb-3"><i className="bi bi-card-text"></i> Description</h6>
-                <div className="mb-1">
-                  <label className="form-label text-secondary fw-medium">A short intro for your profile</label>
-                  <textarea
-                    className="form-control"
-                    name="description"
-                    rows="3"
-                    placeholder="e.g. Full-stack developer based in Berlin, building developer tools and obsessing over clean APIs."
-                    value={formData.description}
-                    onChange={handleInputChange}
-                  ></textarea>
-                </div>
+                <label className="form-label text-secondary fw-medium">A short intro for your profile</label>
+                <textarea
+                  className="form-control"
+                  name="description"
+                  rows="3"
+                  placeholder="e.g. Full-stack developer based in Berlin, building developer tools."
+                  value={formData.description}
+                  onChange={handleInputChange}
+                />
               </div>
 
+              {/* About Me */}
               <div className="mb-4">
                 <h6 className="fw-bold text-primary mb-3"><i className="bi bi-info-circle"></i> About Me</h6>
                 <div className="mb-3">
@@ -182,23 +214,98 @@ const Editor = () => {
                 </div>
               </div>
 
+              {/* Tech Stack */}
               <div className="mb-4">
                 <h6 className="fw-bold text-primary mb-3"><i className="bi bi-tools"></i> Tech Stack</h6>
                 <label className="form-label text-secondary fw-medium mb-3">Select your skills:</label>
                 <SkillsPicker
                   selectedSkills={formData.skills}
-                  onChange={(newSkills) => setFormData({ ...formData, skills: newSkills })}
+                  onChange={(newSkills) => setFormData((prev) => ({ ...prev, skills: newSkills }))}
                 />
               </div>
 
+              {/* Projects */}
+              <div className="mb-4">
+                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-folder2-open"></i> Projects</h6>
+                <p className="text-muted small">Showcase your best work — each project appears as a row in your README.</p>
+
+                {formData.projects.map((project, index) => (
+                  <div
+                    key={index}
+                    className="border rounded-3 p-3 mb-3 position-relative"
+                    style={{ backgroundColor: 'rgba(127,127,127,0.05)' }}
+                  >
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-danger position-absolute top-0 end-0 m-2 py-0 px-2"
+                      onClick={() => removeProject(index)}
+                      title="Remove project"
+                    >
+                      <i className="bi bi-x"></i>
+                    </button>
+
+                    <div className="mb-2">
+                      <label className="form-label text-secondary small fw-medium mb-1">Project Name *</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="e.g. Portfolio Website"
+                        value={project.name}
+                        onChange={(e) => updateProject(index, 'name', e.target.value)}
+                      />
+                    </div>
+                    <div className="mb-2">
+                      <label className="form-label text-secondary small fw-medium mb-1">Short Description</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="e.g. Personal portfolio built with React"
+                        value={project.description}
+                        onChange={(e) => updateProject(index, 'description', e.target.value)}
+                      />
+                    </div>
+                    <div className="mb-2">
+                      <label className="form-label text-secondary small fw-medium mb-1">GitHub / Live URL</label>
+                      <input
+                        type="url"
+                        className="form-control form-control-sm"
+                        placeholder="https://github.com/you/project"
+                        value={project.url}
+                        onChange={(e) => updateProject(index, 'url', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label text-secondary small fw-medium mb-1">Tech Used</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="e.g. React, Django, PostgreSQL"
+                        value={project.tech}
+                        onChange={(e) => updateProject(index, 'tech', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2"
+                  onClick={addProject}
+                >
+                  <i className="bi bi-plus-circle"></i> Add Project
+                </button>
+              </div>
+
+              {/* Social Links */}
               <div className="mb-4">
                 <h6 className="fw-bold text-primary mb-3"><i className="bi bi-link-45deg"></i> Social Media Links</h6>
                 <SocialLinksPicker
                   values={formData.socialLinks}
-                  onChange={(socialLinks) => setFormData({ ...formData, socialLinks })}
+                  onChange={(socialLinks) => setFormData((prev) => ({ ...prev, socialLinks }))}
                 />
               </div>
 
+              {/* GitHub Integration */}
               <div className="mb-4">
                 <h6 className="fw-bold text-primary mb-3"><i className="bi bi-github"></i> GitHub Integration</h6>
                 <div className="mb-3">
@@ -223,9 +330,10 @@ const Editor = () => {
                 )}
               </div>
 
+              {/* Reorder Sections */}
               <div className="mb-4">
                 <h6 className="fw-bold text-primary mb-3"><i className="bi bi-list-task"></i> Reorder Sections</h6>
-                <p className="text-muted small">Drag and drop to rearrange the sections in your README.</p>
+                <p className="text-muted small">Drag and drop to rearrange sections in your README.</p>
                 <div className="d-flex flex-column gap-2">
                   {formData.sections.map((sec, index) => (
                     <div
@@ -248,11 +356,16 @@ const Editor = () => {
           </div>
         </div>
 
-        {/* Right column: preview */}
+        {/* ── Right: live preview ── */}
         <div className="col-lg-7">
-          <div className="card shadow-sm border-0 h-100 p-0 overflow-hidden d-flex flex-column" style={{ backgroundColor: 'var(--bg-color)', border: '1px solid var(--glass-border)', maxHeight: '85vh' }}>
-
-            <div className="d-flex justify-content-between align-items-center p-3 border-bottom" style={{ backgroundColor: 'var(--glass-bg)' }}>
+          <div
+            className="card shadow-sm border-0 h-100 p-0 overflow-hidden d-flex flex-column"
+            style={{ backgroundColor: 'var(--bg-color)', border: '1px solid var(--glass-border)', maxHeight: '85vh' }}
+          >
+            <div
+              className="d-flex justify-content-between align-items-center p-3 border-bottom"
+              style={{ backgroundColor: 'var(--glass-bg)' }}
+            >
               <h5 className="fw-bold m-0 d-flex align-items-center gap-2">
                 <i className="bi bi-eye text-primary"></i> Live Preview
               </h5>
@@ -279,7 +392,6 @@ const Editor = () => {
                 </div>
               )}
             </div>
-
           </div>
         </div>
 
