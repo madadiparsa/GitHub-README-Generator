@@ -1,3 +1,4 @@
+# core/settings.py
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -15,7 +16,6 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
 ]
 
-
 INSTALLED_APPS = [
     # Django
     'django.contrib.admin',
@@ -24,7 +24,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
 
     # Third party
     'rest_framework',
@@ -38,14 +37,11 @@ INSTALLED_APPS = [
     'dj_rest_auth',
     'dj_rest_auth.registration',
 
-
     # Local
     'api',
 ]
 
-
 SITE_ID = 1
-
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -59,12 +55,13 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
 ]
 
-
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
+# ✅ Fix: allow cookies to be sent cross-origin (needed for JWT cookie auth)
+CORS_ALLOW_CREDENTIALS = True
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -72,21 +69,39 @@ REST_FRAMEWORK = {
     )
 }
 
-
 REST_USE_JWT = True
 
-
 REST_AUTH = {
-    "USE_JWT": True,
-    "JWT_AUTH_COOKIE": "my-app-auth",
+    "USE_JWT":                True,
+    "JWT_AUTH_COOKIE":        "my-app-auth",
     "JWT_AUTH_REFRESH_COOKIE": "my-refresh-token",
+    # ✅ Fix: return tokens in response body as well as cookies so the
+    #    frontend can store them in localStorage for the auth flow
+    "JWT_AUTH_RETURN_EXPIRATION": True,
+    "JWT_AUTH_HTTPONLY":      False,
 }
 
-SOCIALACCOUNT_EMAIL_REQUIRED = False
-SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
-SOCIALACCOUNT_AUTO_SIGNUP = True
+# ✅ Fix: without this allauth defaults to mandatory e-mail verification,
+#    which blocks GitHub OAuth users who have no verified e-mail address.
+ACCOUNT_EMAIL_VERIFICATION       = "none"
+ACCOUNT_EMAIL_REQUIRED            = False
+ACCOUNT_AUTHENTICATION_METHOD     = "username"
+
+SOCIALACCOUNT_EMAIL_REQUIRED      = False
+SOCIALACCOUNT_EMAIL_VERIFICATION  = "none"
+SOCIALACCOUNT_AUTO_SIGNUP         = True
+
+# ✅ Fix: store the raw GitHub OAuth token on the SocialToken so the
+#    navbar can use it to fetch the user's avatar / display name.
+SOCIALACCOUNT_STORE_TOKENS        = True
 
 ROOT_URLCONF = 'core.urls'
+
+# ✅ Fix: was missing — Django won't serve WSGI without this
+WSGI_APPLICATION = 'core.wsgi.application'
+
+# ✅ Fix: was missing — suppresses Django system-check warning
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 TEMPLATES = [
     {
@@ -103,21 +118,15 @@ TEMPLATES = [
     },
 ]
 
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME':   BASE_DIR / 'db.sqlite3',
     }
 }
 
-
 LANGUAGE_CODE = 'en-us'
-
-TIME_ZONE = 'UTC'
-
-USE_I18N = True
-
-USE_TZ = True
-
-STATIC_URL = 'static/'
+TIME_ZONE     = 'UTC'
+USE_I18N      = True
+USE_TZ        = True
+STATIC_URL    = 'static/'
