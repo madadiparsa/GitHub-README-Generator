@@ -4,10 +4,8 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# این خط باید اضافه شود تا فایل .env خوانده شود
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-# حالا جنگو می‌تواند مقدار را پیدا کند
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
 DEBUG = True
