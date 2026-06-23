@@ -1,27 +1,6 @@
+// src/components/SkillsPicker.jsx
 import React from 'react';
-
-const SKILLS_CATEGORIES = {
-  "Frontend": {
-    color: "#0ea5e9",
-    skills: ['HTML5', 'CSS3', 'JavaScript', 'TypeScript', 'React', 'Next.js', 'Vue', 'Nuxt.js', 'Angular', 'Svelte', 'Tailwind', 'Sass', 'Redux']
-  },
-  "Backend": {
-    color: "#10b981",
-    skills: ['Python', 'Java', 'C++', 'C#', 'Go', 'Rust', 'Node.js', 'Django', 'Flask', 'FastAPI', 'Spring', 'Express', 'Ruby on Rails', 'PHP']
-  },
-  "Data Science & AI": {
-    color: "#f43f5e",
-    skills: ['TensorFlow', 'PyTorch', 'Keras', 'Scikit-learn', 'Pandas', 'NumPy', 'OpenCV', 'Jupyter', 'Matplotlib', 'Hugging Face']
-  },
-  "Database & Cloud": {
-    color: "#f59e0b",
-    skills: ['PostgreSQL', 'MongoDB', 'MySQL', 'Redis', 'SQLite', 'Docker', 'Kubernetes', 'AWS', 'Google Cloud', 'Azure', 'Firebase', 'Supabase']
-  },
-  "Tools & Other": {
-    color: "#8b5cf6",
-    skills: ['Linux', 'Git', 'GitHub', 'GitLab', 'Figma', 'Bash', 'Postman', 'Nginx', 'GraphQL', 'Vite']
-  }
-};
+import { SKILLS_CATEGORIES } from '../utils/skills';
 
 const SkillsPicker = ({ selectedSkills, onChange }) => {
   const toggleSkill = (skill) => {
@@ -41,12 +20,21 @@ const SkillsPicker = ({ selectedSkills, onChange }) => {
           <div key={category}>
             <h6
               className="small mb-3 fw-bold border-bottom pb-2"
-              style={{ color: color, opacity: 0.9 }}
+              style={{ color, opacity: 0.9 }}
             >
               {category}
             </h6>
 
-            <div className="d-flex flex-wrap gap-2">
+            {/* ✅ overflow fix: constrain width to 100% and allow wrapping */}
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                width: '100%',
+                overflowX: 'hidden',
+              }}
+            >
               {skills.map(skill => {
                 const isSelected = selectedSkills.includes(skill);
 
@@ -59,6 +47,9 @@ const SkillsPicker = ({ selectedSkills, onChange }) => {
                       cursor: 'pointer',
                       transition: 'all 0.2s ease-in-out',
                       userSelect: 'none',
+                      flexShrink: 0,      
+                      maxWidth: '100%',      
+                      whiteSpace: 'normal',   
                       backgroundColor: isSelected ? color : `${color}1A`,
                       color: isSelected ? '#ffffff' : color,
                       border: `1px solid ${isSelected ? color : `${color}80`}`,
