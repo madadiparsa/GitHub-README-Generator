@@ -1,5 +1,6 @@
 // src/pages/Editor.jsx
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -50,8 +51,9 @@ const DEFAULT_FORM_DATA = {
 };
 
 const Editor = () => {
-  const [formData, setFormData]           = useState(DEFAULT_FORM_DATA);
-  const [markdown, setMarkdown]           = useState('');
+  const location                              = useLocation();
+  const [formData, setFormData]               = useState(DEFAULT_FORM_DATA);
+  const [markdown, setMarkdown]               = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // 1. Check auth + prefill from stored GitHub user
@@ -63,10 +65,10 @@ const Editor = () => {
     if (userData) {
       setFormData((prev) => ({
         ...prev,
-        name:          userData.name || userData.first_name || prev.name,
+        name:           userData.name || userData.first_name || prev.name,
         githubUsername: userData.username || userData.github_username || prev.githubUsername,
-        description:   userData.bio || prev.description,
-        email:         userData.email || prev.email,
+        description:    userData.bio || prev.description,
+        email:          userData.email || prev.email,
         socialLinks: {
           ...prev.socialLinks,
           github: prev.socialLinks.github || userData.username || '',
@@ -75,14 +77,33 @@ const Editor = () => {
     }
   }, []);
 
-  // 2. Guard locked templates for guests
+  // 2. Prefill from Explore page or Templates page navigation state
+  useEffect(() => {
+    if (!location.state) return;
+
+    if (location.state.prefill) {
+      setFormData((prev) => ({
+        ...prev,
+        ...location.state.prefill,
+        // preserve auth-prefilled user data if it was already set
+        name:           location.state.prefill.name || prev.name,
+        githubUsername: location.state.prefill.githubUsername || prev.githubUsername,
+      }));
+    }
+
+    if (location.state.template) {
+      setFormData((prev) => ({ ...prev, template: location.state.template }));
+    }
+  }, [location.state]);
+
+  // 3. Guard locked templates for guests
   useEffect(() => {
     if (!isAuthenticated && formData.template !== DEFAULT_TEMPLATE_ID) {
       setFormData((prev) => ({ ...prev, template: DEFAULT_TEMPLATE_ID }));
     }
   }, [isAuthenticated, formData.template]);
 
-  // 3. Regenerate markdown on every form change
+  // 4. Regenerate markdown on every form change
   useEffect(() => {
     setMarkdown(generateMarkdown(formData));
   }, [formData]);
@@ -159,14 +180,21 @@ const Editor = () => {
         <div className="col-lg-5">
           <div
             className="card shadow-sm border-0 h-100 p-4 overflow-auto"
-            style={{ backgroundColor: 'var(--glass-bg)', backdropFilter: 'blur(10px)', maxHeight: '85vh' }}
+            style={{
+              backgroundColor: 'var(--glass-bg)',
+              backdropFilter:  'blur(10px)',
+              maxHeight:       '85vh',
+            }}
           >
             <h4 className="fw-bold mb-4">✍️ Customize Profile</h4>
 
             <form>
-              {/* Template */}
+
+              {/* ── Template ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-palette"></i> Template</h6>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-palette me-1"></i> Template
+                </h6>
                 <TemplateSelector
                   selected={formData.template}
                   isAuthenticated={isAuthenticated}
@@ -174,23 +202,42 @@ const Editor = () => {
                 />
               </div>
 
-              {/* Basic Info */}
+              {/* ── Basic Info ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-person"></i> Basic Info</h6>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-person me-1"></i> Basic Info
+                </h6>
                 <div className="mb-3">
                   <label className="form-label text-secondary fw-medium">Your Name</label>
-                  <input type="text" className="form-control" name="name" placeholder="e.g. Linus Torvalds" value={formData.name} onChange={handleInputChange} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    name="name"
+                    placeholder="e.g. Linus Torvalds"
+                    value={formData.name}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 <div className="mb-3">
                   <label className="form-label text-secondary fw-medium">Subtitle / Catchphrase</label>
-                  <input type="text" className="form-control" name="subtitle" value={formData.subtitle} onChange={handleInputChange} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    name="subtitle"
+                    value={formData.subtitle}
+                    onChange={handleInputChange}
+                  />
                 </div>
               </div>
 
-              {/* Description */}
+              {/* ── Description ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-card-text"></i> Description</h6>
-                <label className="form-label text-secondary fw-medium">A short intro for your profile</label>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-card-text me-1"></i> Description
+                </h6>
+                <label className="form-label text-secondary fw-medium">
+                  A short intro for your profile
+                </label>
                 <textarea
                   className="form-control"
                   name="description"
@@ -201,33 +248,59 @@ const Editor = () => {
                 />
               </div>
 
-              {/* About Me */}
+              {/* ── About Me ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-info-circle"></i> About Me</h6>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-info-circle me-1"></i> About Me
+                </h6>
                 <div className="mb-3">
                   <label className="form-label text-secondary fw-medium">Currently working on</label>
-                  <input type="text" className="form-control" name="bio" placeholder="e.g. A new open source project" value={formData.bio} onChange={handleInputChange} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    name="bio"
+                    placeholder="e.g. A new open source project"
+                    value={formData.bio}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 <div className="mb-3">
                   <label className="form-label text-secondary fw-medium">Currently learning</label>
-                  <input type="text" className="form-control" name="currentLearning" placeholder="e.g. Machine Learning, Rust" value={formData.currentLearning} onChange={handleInputChange} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    name="currentLearning"
+                    placeholder="e.g. Machine Learning, Rust"
+                    value={formData.currentLearning}
+                    onChange={handleInputChange}
+                  />
                 </div>
               </div>
 
-              {/* Tech Stack */}
+              {/* ── Tech Stack ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-tools"></i> Tech Stack</h6>
-                <label className="form-label text-secondary fw-medium mb-3">Select your skills:</label>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-tools me-1"></i> Tech Stack
+                </h6>
+                <label className="form-label text-secondary fw-medium mb-3">
+                  Select your skills:
+                </label>
                 <SkillsPicker
                   selectedSkills={formData.skills}
-                  onChange={(newSkills) => setFormData((prev) => ({ ...prev, skills: newSkills }))}
+                  onChange={(newSkills) =>
+                    setFormData((prev) => ({ ...prev, skills: newSkills }))
+                  }
                 />
               </div>
 
-              {/* Projects */}
+              {/* ── Projects ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-folder2-open"></i> Projects</h6>
-                <p className="text-muted small">Showcase your best work — each project appears as a row in your README.</p>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-folder2-open me-1"></i> Projects
+                </h6>
+                <p className="text-muted small">
+                  Showcase your best work — each project appears as a row in your README.
+                </p>
 
                 {formData.projects.map((project, index) => (
                   <div
@@ -235,6 +308,7 @@ const Editor = () => {
                     className="border rounded-3 p-3 mb-3 position-relative"
                     style={{ backgroundColor: 'rgba(127,127,127,0.05)' }}
                   >
+                    {/* Remove button */}
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-danger position-absolute top-0 end-0 m-2 py-0 px-2"
@@ -245,7 +319,9 @@ const Editor = () => {
                     </button>
 
                     <div className="mb-2">
-                      <label className="form-label text-secondary small fw-medium mb-1">Project Name *</label>
+                      <label className="form-label text-secondary small fw-medium mb-1">
+                        Project Name *
+                      </label>
                       <input
                         type="text"
                         className="form-control form-control-sm"
@@ -254,8 +330,11 @@ const Editor = () => {
                         onChange={(e) => updateProject(index, 'name', e.target.value)}
                       />
                     </div>
+
                     <div className="mb-2">
-                      <label className="form-label text-secondary small fw-medium mb-1">Short Description</label>
+                      <label className="form-label text-secondary small fw-medium mb-1">
+                        Short Description
+                      </label>
                       <input
                         type="text"
                         className="form-control form-control-sm"
@@ -264,8 +343,11 @@ const Editor = () => {
                         onChange={(e) => updateProject(index, 'description', e.target.value)}
                       />
                     </div>
+
                     <div className="mb-2">
-                      <label className="form-label text-secondary small fw-medium mb-1">GitHub / Live URL</label>
+                      <label className="form-label text-secondary small fw-medium mb-1">
+                        GitHub / Live URL
+                      </label>
                       <input
                         type="url"
                         className="form-control form-control-sm"
@@ -274,8 +356,11 @@ const Editor = () => {
                         onChange={(e) => updateProject(index, 'url', e.target.value)}
                       />
                     </div>
+
                     <div>
-                      <label className="form-label text-secondary small fw-medium mb-1">Tech Used</label>
+                      <label className="form-label text-secondary small fw-medium mb-1">
+                        Tech Used
+                      </label>
                       <input
                         type="text"
                         className="form-control form-control-sm"
@@ -296,30 +381,57 @@ const Editor = () => {
                 </button>
               </div>
 
-              {/* Social Links */}
+              {/* ── Social Links ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-link-45deg"></i> Social Media Links</h6>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-link-45deg me-1"></i> Social Media Links
+                </h6>
                 <SocialLinksPicker
                   values={formData.socialLinks}
-                  onChange={(socialLinks) => setFormData((prev) => ({ ...prev, socialLinks }))}
+                  onChange={(socialLinks) =>
+                    setFormData((prev) => ({ ...prev, socialLinks }))
+                  }
                 />
               </div>
 
-              {/* GitHub Integration */}
+              {/* ── GitHub Integration ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-github"></i> GitHub Integration</h6>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-github me-1"></i> GitHub Integration
+                </h6>
                 <div className="mb-3">
                   <label className="form-label text-secondary fw-medium">GitHub Username</label>
-                  <input type="text" className="form-control" name="githubUsername" placeholder="Enter username for stats" value={formData.githubUsername} onChange={handleInputChange} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    name="githubUsername"
+                    placeholder="Enter username for stats"
+                    value={formData.githubUsername}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 <div className="form-check form-switch mb-3">
-                  <input className="form-check-input" type="checkbox" name="showStats" id="showStats" checked={formData.showStats} onChange={handleInputChange} />
-                  <label className="form-check-label text-secondary" htmlFor="showStats">Show GitHub Stats Card</label>
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    name="showStats"
+                    id="showStats"
+                    checked={formData.showStats}
+                    onChange={handleInputChange}
+                  />
+                  <label className="form-check-label text-secondary" htmlFor="showStats">
+                    Show GitHub Stats Card
+                  </label>
                 </div>
                 {formData.showStats && (
                   <div className="mb-3">
                     <label className="form-label text-secondary fw-medium">Stats Theme</label>
-                    <select className="form-select" name="theme" value={formData.theme} onChange={handleInputChange}>
+                    <select
+                      className="form-select"
+                      name="theme"
+                      value={formData.theme}
+                      onChange={handleInputChange}
+                    >
                       <option value="radical">Radical</option>
                       <option value="tokyonight">Tokyo Night</option>
                       <option value="github_dark">GitHub Dark</option>
@@ -330,10 +442,14 @@ const Editor = () => {
                 )}
               </div>
 
-              {/* Reorder Sections */}
+              {/* ── Reorder Sections ── */}
               <div className="mb-4">
-                <h6 className="fw-bold text-primary mb-3"><i className="bi bi-list-task"></i> Reorder Sections</h6>
-                <p className="text-muted small">Drag and drop to rearrange sections in your README.</p>
+                <h6 className="fw-bold text-primary mb-3">
+                  <i className="bi bi-list-task me-1"></i> Reorder Sections
+                </h6>
+                <p className="text-muted small">
+                  Drag and drop to rearrange sections in your README.
+                </p>
                 <div className="d-flex flex-column gap-2">
                   {formData.sections.map((sec, index) => (
                     <div
@@ -360,8 +476,13 @@ const Editor = () => {
         <div className="col-lg-7">
           <div
             className="card shadow-sm border-0 h-100 p-0 overflow-hidden d-flex flex-column"
-            style={{ backgroundColor: 'var(--bg-color)', border: '1px solid var(--glass-border)', maxHeight: '85vh' }}
+            style={{
+              backgroundColor: 'var(--bg-color)',
+              border:          '1px solid var(--glass-border)',
+              maxHeight:       '85vh',
+            }}
           >
+            {/* Preview toolbar */}
             <div
               className="d-flex justify-content-between align-items-center p-3 border-bottom"
               style={{ backgroundColor: 'var(--glass-bg)' }}
@@ -370,15 +491,22 @@ const Editor = () => {
                 <i className="bi bi-eye text-primary"></i> Live Preview
               </h5>
               <div className="d-flex gap-2">
-                <button className="btn btn-outline-primary btn-sm d-flex align-items-center gap-2 shadow-sm" onClick={handleCopy}>
+                <button
+                  className="btn btn-outline-primary btn-sm d-flex align-items-center gap-2 shadow-sm"
+                  onClick={handleCopy}
+                >
                   <i className="bi bi-clipboard"></i> Copy
                 </button>
-                <button className="btn btn-primary btn-sm d-flex align-items-center gap-2 shadow-sm" onClick={handleDownload}>
+                <button
+                  className="btn btn-primary btn-sm d-flex align-items-center gap-2 shadow-sm"
+                  onClick={handleDownload}
+                >
                   <i className="bi bi-download"></i> Download
                 </button>
               </div>
             </div>
 
+            {/* Preview content */}
             <div className="p-4 overflow-auto flex-grow-1 bg-body">
               {markdown ? (
                 <div className="markdown-preview">
