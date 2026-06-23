@@ -1,3 +1,4 @@
+// src/App.jsx
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import IslandNavbar from './components/IslandNavbar';
@@ -15,12 +16,61 @@ const Home = () => (
       Build stunning profile pages in minutes. Drag, drop, and deploy. Zero coding required.
     </p>
     <div className="mt-5 fade-in-up delay-2">
-      <Link to="/editor" className="btn btn-primary rounded-pill px-4 py-2 me-3 fs-5 shadow-sm hover-scale text-decoration-none">
+      <Link
+        to="/editor"
+        className="btn btn-primary rounded-pill px-4 py-2 me-3 fs-5 shadow-sm hover-scale text-decoration-none"
+      >
         Get Started
       </Link>
-      <button className="btn btn-outline-secondary rounded-pill px-4 py-2 fs-5 shadow-sm hover-scale">
+      <Link
+        to="/templates"
+        className="btn btn-outline-secondary rounded-pill px-4 py-2 fs-5 shadow-sm hover-scale text-decoration-none"
+      >
         View Templates
-      </button>
+      </Link>
+    </div>
+
+    {/* Feature highlights */}
+    <div className="row g-4 mt-5 text-start fade-in-up delay-2">
+      <div className="col-md-4">
+        <div
+          className="p-4 rounded-4 h-100"
+          style={{ backgroundColor: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        >
+          <div className="fs-2 mb-3">🎨</div>
+          <h5 className="fw-bold">Multiple Templates</h5>
+          <p className="text-secondary small mb-0">
+            Choose from Modern Badges, Minimalist, and Creative Banner styles.
+            Every template is fully customisable.
+          </p>
+        </div>
+      </div>
+      <div className="col-md-4">
+        <div
+          className="p-4 rounded-4 h-100"
+          style={{ backgroundColor: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        >
+          <div className="fs-2 mb-3">⚡</div>
+          <h5 className="fw-bold">Live Preview</h5>
+          <p className="text-secondary small mb-0">
+            See your README render in real time as you type. Copy or download
+            your finished file in one click.
+          </p>
+        </div>
+      </div>
+      <div className="col-md-4">
+        <div
+          className="p-4 rounded-4 h-100"
+          style={{ backgroundColor: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        >
+          <div className="fs-2 mb-3">🔗</div>
+          <h5 className="fw-bold">GitHub Integration</h5>
+          <p className="text-secondary small mb-0">
+            Login with GitHub to auto-fill your profile, unlock all templates,
+            and embed live stats cards.
+          </p>
+        </div>
+      </div>
     </div>
   </div>
 );
@@ -29,32 +79,27 @@ function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
 
   useEffect(() => {
-    // `data-theme` drives our own CSS variables (index.css), while
-    // `data-bs-theme` is what Bootstrap 5 itself looks for to switch the
-    // palette of its built-in components (cards, forms, buttons, text-*
-    // utilities). Without both, Bootstrap elements stayed light-themed even
-    // when the rest of the app switched to dark.
+    // data-theme drives our own CSS variables (index.css)
+    // data-bs-theme is what Bootstrap 5 uses to switch its built-in palette
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.setAttribute('data-bs-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
   return (
     <Router>
       <div className="App">
         <IslandNavbar theme={theme} toggleTheme={toggleTheme} />
-        {/* Container wrapper removed to allow Editor to use full width container-fluid */}
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/editor" element={<Editor />} />
+          <Route path="/"              element={<Home />} />
+          <Route path="/editor"        element={<Editor />} />
+          <Route path="/templates"     element={<Templates />} />
+          <Route path="/explore"       element={<Explore />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/templates" element={<Templates />} />
-          <Route path="/explore"  element={<Explore />} />
-          <Route path="/auth/callback" element={<AuthCallback />} /> 
         </Routes>
       </div>
     </Router>
