@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import IslandNavbar from './components/IslandNavbar';
 import AuthCallback from './pages/AuthCallback';
 import Editor from './pages/Editor';
+import Templates from './pages/Templates';
 
 const Home = () => (
   <div className="container text-center mt-5 main-content">
@@ -50,6 +51,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/editor" element={<Editor />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/templates" element={<Templates />} />
         </Routes>
       </div>
     </Router>
