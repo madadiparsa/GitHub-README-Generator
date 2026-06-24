@@ -12,53 +12,54 @@ import SocialLinksPicker from '../components/SocialLinksPicker';
 import TemplateSelector from '../components/TemplateSelector';
 import AIGenerator from '../components/AIGenerator';
 import GitHubSync from '../components/GitHubSync';
+import ReadmeScore from '../components/ReadmeScore';
 
 const SECTION_NAMES = {
-  header:      'Header & Title',
+  header: 'Header & Title',
   description: 'Description',
-  about:       'About Me',
-  skills:      'Tech Stack',
-  social:      'Social Links',
-  projects:    'Projects',
-  stats:       'GitHub Stats',
+  about: 'About Me',
+  skills: 'Tech Stack',
+  social: 'Social Links',
+  projects: 'Projects',
+  stats: 'GitHub Stats',
 };
 
 const EMPTY_PROJECT = { name: '', description: '', url: '', tech: '' };
 
 const DEFAULT_FORM_DATA = {
-  name:            '',
-  subtitle:        'A passionate developer',
-  description:     '',
-  bio:             '',
+  name: '',
+  subtitle: 'A passionate developer',
+  description: '',
+  bio: '',
   currentLearning: '',
-  portfolio:       '',
-  email:           '',
-  githubUsername:  '',
-  skills:          ['React', 'JavaScript', 'Python'],
+  portfolio: '',
+  email: '',
+  githubUsername: '',
+  skills: ['React', 'JavaScript', 'Python'],
   socialLinks: {
-    github:    '',
-    linkedin:  '',
-    twitter:   '',
+    github: '',
+    linkedin: '',
+    twitter: '',
     instagram: '',
-    youtube:   '',
-    devto:     '',
-    website:   '',
-    email:     '',
+    youtube: '',
+    devto: '',
+    website: '',
+    email: '',
   },
-  projects:  [],
+  projects: [],
   showStats: true,
-  theme:     'radical',
-  template:  DEFAULT_TEMPLATE_ID,
-  sections:  ['header', 'description', 'about', 'skills', 'projects', 'social', 'stats'],
+  theme: 'radical',
+  template: DEFAULT_TEMPLATE_ID,
+  sections: ['header', 'description', 'about', 'skills', 'projects', 'social', 'stats'],
 };
 
 const Editor = () => {
-  const location                              = useLocation();
-  const [formData, setFormData]               = useState(DEFAULT_FORM_DATA);
-  const [markdown, setMarkdown]               = useState('');
+  const location = useLocation();
+  const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
+  const [markdown, setMarkdown] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [aiMarkdown, setAiMarkdown]           = useState(null);
-  const [previewMode, setPreviewMode]         = useState('generated');
+  const [aiMarkdown, setAiMarkdown] = useState(null);
+  const [previewMode, setPreviewMode] = useState('generated');
 
   // 1. Check auth + prefill from stored GitHub user
   useEffect(() => {
@@ -69,10 +70,10 @@ const Editor = () => {
     if (userData) {
       setFormData((prev) => ({
         ...prev,
-        name:           userData.name || userData.first_name || prev.name,
+        name: userData.name || userData.first_name || prev.name,
         githubUsername: userData.username || userData.github_username || prev.githubUsername,
-        description:    userData.bio || prev.description,
-        email:          userData.email || prev.email,
+        description: userData.bio || prev.description,
+        email: userData.email || prev.email,
         socialLinks: {
           ...prev.socialLinks,
           github: prev.socialLinks.github || userData.username || '',
@@ -88,7 +89,7 @@ const Editor = () => {
       setFormData((prev) => ({
         ...prev,
         ...location.state.prefill,
-        name:           location.state.prefill.name           || prev.name,
+        name: location.state.prefill.name || prev.name,
         githubUsername: location.state.prefill.githubUsername || prev.githubUsername,
       }));
     }
@@ -134,10 +135,10 @@ const Editor = () => {
     setFormData((prev) => ({
       ...prev,
       // Profile fields
-      name:           profile.name           || prev.name,
-      githubUsername: profile.login          || prev.githubUsername,
-      description:    profile.bio            || prev.description,
-      email:          profile.email          || prev.email,
+      name: profile.name || prev.name,
+      githubUsername: profile.login || prev.githubUsername,
+      description: profile.bio || prev.description,
+      email: profile.email || prev.email,
 
       // Merge suggested skills with existing — deduplicate
       skills: [...new Set([...prev.skills, ...suggested_skills])],
@@ -153,10 +154,10 @@ const Editor = () => {
       // Social links from GitHub profile
       socialLinks: {
         ...prev.socialLinks,
-        github:  profile.login          || prev.socialLinks.github,
+        github: profile.login || prev.socialLinks.github,
         twitter: profile.twitter_username || prev.socialLinks.twitter,
-        website: profile.blog            || prev.socialLinks.website,
-        email:   profile.email           || prev.socialLinks.email,
+        website: profile.blog || prev.socialLinks.website,
+        email: profile.email || prev.socialLinks.email,
       },
     }));
   };
@@ -232,8 +233,8 @@ const Editor = () => {
             className="card shadow-sm border-0 h-100 p-4 overflow-auto"
             style={{
               backgroundColor: 'var(--glass-bg)',
-              backdropFilter:  'blur(10px)',
-              maxHeight:       '85vh',
+              backdropFilter: 'blur(10px)',
+              maxHeight: '85vh',
             }}
           >
             <h4 className="fw-bold mb-4">✍️ Customize Profile</h4>
@@ -243,9 +244,9 @@ const Editor = () => {
               <h6
                 className="fw-bold mb-3"
                 style={{
-                  background:            'linear-gradient(135deg, #6366f1, #ec4899)',
-                  WebkitBackgroundClip:  'text',
-                  WebkitTextFillColor:   'transparent',
+                  background: 'linear-gradient(135deg, #6366f1, #ec4899)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
                 }}
               >
                 <i className="bi bi-stars me-1"></i> AI Generation
@@ -256,15 +257,29 @@ const Editor = () => {
               />
             </div>
 
+            <div className="mb-4">
+              <h6
+                className="fw-bold mb-3"
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                <i className="bi bi-clipboard2-check me-1"></i> README Score
+              </h6>
+              <ReadmeScore formData={formData} />
+            </div>
+
             {/* ── GitHub Sync (authenticated users only) ── */}
             {isAuthenticated && (
               <div className="mb-4">
                 <h6
                   className="fw-bold mb-3"
                   style={{
-                    background:           'linear-gradient(135deg, #10b981, #06b6d4)',
+                    background: 'linear-gradient(135deg, #10b981, #06b6d4)',
                     WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor:  'transparent',
+                    WebkitTextFillColor: 'transparent',
                   }}
                 >
                   <i className="bi bi-github me-1"></i> GitHub Sync
@@ -577,8 +592,8 @@ const Editor = () => {
             className="card shadow-sm border-0 h-100 p-0 overflow-hidden d-flex flex-column"
             style={{
               backgroundColor: 'var(--bg-color)',
-              border:          '1px solid var(--glass-border)',
-              maxHeight:       '85vh',
+              border: '1px solid var(--glass-border)',
+              maxHeight: '85vh',
             }}
           >
             {/* Preview toolbar */}

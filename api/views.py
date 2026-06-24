@@ -7,9 +7,13 @@ from dj_rest_auth.registration.views import SocialLoginView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from groq import Groq
-from .serializers import GenerateReadmeSerializer, GitHubSyncSerializer
+from .serializers import (
+    GenerateReadmeSerializer,
+    GitHubSyncSerializer,
+    ReadmeScoreSerializer,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +167,7 @@ class GenerateReadmeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        data = serializer.validated_data
-
+        data   = serializer.validated_data
         prompt = build_prompt(data)
 
         try:
@@ -215,13 +218,6 @@ class GenerateReadmeView(APIView):
 # ---------------------------------------------------------------------------
 
 class GitHubSyncView(APIView):
-    """
-    POST /api/github/sync/
-    Accepts a GitHub OAuth access token, calls the GitHub API,
-    and returns the user's profile data, top repos, and detected
-    languages so the Editor can auto-populate skills and projects.
-    No Django auth required — the GitHub token IS the credential.
-    """
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -235,12 +231,11 @@ class GitHubSyncView(APIView):
 
         access_token = serializer.validated_data['access_token']
         headers      = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept":        "application/vnd.github+json",
+            "Authorization":        f"Bearer {access_token}",
+            "Accept":               "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
-        # ── 1. Fetch the authenticated user's profile ─────────────────────
         try:
             user_resp = requests.get(
                 "https://api.github.com/user",
@@ -255,7 +250,6 @@ class GitHubSyncView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
-        # ── 2. Fetch the user's public repos (up to 100, sorted by stars) ─
         try:
             repos_resp = requests.get(
                 "https://api.github.com/user/repos",
@@ -276,7 +270,6 @@ class GitHubSyncView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
-        # ── 3. Extract top repos (non-fork, sorted by stars, top 6) ───────
         non_fork_repos = [r for r in all_repos if not r.get('fork', False)]
         top_repos      = sorted(
             non_fork_repos,
@@ -295,23 +288,18 @@ class GitHubSyncView(APIView):
             for repo in top_repos
         ]
 
-        # ── 4. Detect languages across all repos ──────────────────────────
         language_counts = {}
         for repo in all_repos:
             lang = repo.get('language')
             if lang:
                 language_counts[lang] = language_counts.get(lang, 0) + 1
 
-        # Sort by frequency and return top 10
         detected_languages = sorted(
             language_counts.keys(),
             key=lambda l: language_counts[l],
             reverse=True
         )[:10]
 
-        # ── 5. Map detected languages to skill names in our skills list ───
-        # GitHub uses slightly different names than our skills list,
-        # so we normalise them here.
         LANGUAGE_MAP = {
             'JavaScript':   'JavaScript',
             'TypeScript':   'TypeScript',
@@ -338,7 +326,6 @@ class GitHubSyncView(APIView):
             if LANGUAGE_MAP.get(lang, lang)
         ]))
 
-        # ── 6. Build and return the sync payload ──────────────────────────
         return Response(
             {
                 "profile": {
@@ -355,10 +342,212 @@ class GitHubSyncView(APIView):
                     "location":         github_user.get('location') or '',
                     "company":          github_user.get('company') or '',
                 },
-                "projects":          projects,
-                "suggested_skills":  suggested_skills,
+                "projects":           projects,
+                "suggested_skills":   suggested_skills,
                 "detected_languages": detected_languages,
-                "repo_count":        len(all_repos),
+                "repo_count":         len(all_repos),
             },
             status=status.HTTP_200_OK
         )
+
+
+# ---------------------------------------------------------------------------
+# README Score & Linter
+# ---------------------------------------------------------------------------
+
+# Each rule is a dict with:
+#   key        — the formData field(s) to check
+#   points     — how many points this rule is worth
+#   label      — short display name shown in the UI
+#   suggestion — shown when the rule fails
+#   category   — groups rules in the UI (Essential / Content / Social / Polish)
+
+SCORE_RULES = [
+    # ── Essential (40 pts) ───────────────────────────────────────────────
+    {
+        "id":         "has_name",
+        "category":   "Essential",
+        "points":     15,
+        "label":      "Name added",
+        "suggestion": "Add your name — it's the first thing visitors see.",
+        "check":      lambda d: bool(d.get('name', '').strip()),
+    },
+    {
+        "id":         "has_subtitle",
+        "category":   "Essential",
+        "points":     10,
+        "label":      "Subtitle / tagline added",
+        "suggestion": "Add a short tagline that describes what you do.",
+        "check":      lambda d: bool(d.get('subtitle', '').strip()),
+    },
+    {
+        "id":         "has_github_username",
+        "category":   "Essential",
+        "points":     15,
+        "label":      "GitHub username set",
+        "suggestion": "Set your GitHub username to enable stats cards and links.",
+        "check":      lambda d: bool(d.get('githubUsername', '').strip()),
+    },
+
+    # ── Content (30 pts) ─────────────────────────────────────────────────
+    {
+        "id":         "has_description",
+        "category":   "Content",
+        "points":     10,
+        "label":      "Description written",
+        "suggestion": "Write a short intro — 2–3 sentences about who you are.",
+        "check":      lambda d: len(d.get('description', '').strip()) >= 20,
+    },
+    {
+        "id":         "has_bio",
+        "category":   "Content",
+        "points":     5,
+        "label":      "Currently working on filled in",
+        "suggestion": "Tell visitors what you're currently building.",
+        "check":      lambda d: bool(d.get('bio', '').strip()),
+    },
+    {
+        "id":         "has_learning",
+        "category":   "Content",
+        "points":     5,
+        "label":      "Currently learning filled in",
+        "suggestion": "Share what you're learning — it shows curiosity and growth.",
+        "check":      lambda d: bool(d.get('currentLearning', '').strip()),
+    },
+    {
+        "id":         "has_skills",
+        "category":   "Content",
+        "points":     10,
+        "label":      "Skills selected",
+        "suggestion": "Select at least 3 skills from the Tech Stack section.",
+        "check":      lambda d: len(d.get('skills', [])) >= 3,
+    },
+
+    # ── Projects (15 pts) ────────────────────────────────────────────────
+    {
+        "id":         "has_projects",
+        "category":   "Projects",
+        "points":     10,
+        "label":      "At least one project added",
+        "suggestion": "Add at least one project — it's the best way to show your work.",
+        "check":      lambda d: len([
+            p for p in d.get('projects', []) if p.get('name', '').strip()
+        ]) >= 1,
+    },
+    {
+        "id":         "projects_have_urls",
+        "category":   "Projects",
+        "points":     5,
+        "label":      "Projects have links",
+        "suggestion": "Add GitHub or live URLs to your projects so visitors can explore them.",
+        "check":      lambda d: all(
+            p.get('url', '').strip()
+            for p in d.get('projects', [])
+            if p.get('name', '').strip()
+        ) and len(d.get('projects', [])) > 0,
+    },
+
+    # ── Social (10 pts) ──────────────────────────────────────────────────
+    {
+        "id":         "has_social_links",
+        "category":   "Social",
+        "points":     5,
+        "label":      "At least one social link added",
+        "suggestion": "Add at least one social link so people can connect with you.",
+        "check":      lambda d: any(
+            v.strip() for v in d.get('socialLinks', {}).values() if v
+        ),
+    },
+    {
+        "id":         "has_email_or_website",
+        "category":   "Social",
+        "points":     5,
+        "label":      "Email or website added",
+        "suggestion": "Add your email or website so recruiters and collaborators can reach you.",
+        "check":      lambda d: bool(
+            d.get('socialLinks', {}).get('email', '').strip() or
+            d.get('socialLinks', {}).get('website', '').strip()
+        ),
+    },
+
+    # ── Polish (5 pts) ───────────────────────────────────────────────────
+    {
+        "id":         "has_stats",
+        "category":   "Polish",
+        "points":     5,
+        "label":      "GitHub stats card enabled",
+        "suggestion": "Enable the GitHub stats card to show your contribution activity.",
+        "check":      lambda d: bool(d.get('showStats')) and bool(d.get('githubUsername', '').strip()),
+    },
+]
+
+TOTAL_POINTS = sum(r['points'] for r in SCORE_RULES)
+
+
+def calculate_score(data):
+    """
+    Runs every rule against the submitted form data and returns
+    a score (0–100), a letter grade, and a list of passing/failing
+    rule results with suggestions for failing ones.
+    """
+    earned  = 0
+    results = []
+
+    for rule in SCORE_RULES:
+        passed = rule['check'](data)
+        if passed:
+            earned += rule['points']
+        results.append({
+            "id":         rule['id'],
+            "category":   rule['category'],
+            "label":      rule['label'],
+            "points":     rule['points'],
+            "passed":     passed,
+            "suggestion": None if passed else rule['suggestion'],
+        })
+
+    score = round((earned / TOTAL_POINTS) * 100)
+
+    if score >= 90:
+        grade, grade_color = 'A', '#10b981'
+    elif score >= 75:
+        grade, grade_color = 'B', '#06b6d4'
+    elif score >= 60:
+        grade, grade_color = 'C', '#f59e0b'
+    elif score >= 40:
+        grade, grade_color = 'D', '#f97316'
+    else:
+        grade, grade_color = 'F', '#ef4444'
+
+    return {
+        "score":       score,
+        "earned":      earned,
+        "total":       TOTAL_POINTS,
+        "grade":       grade,
+        "grade_color": grade_color,
+        "results":     results,
+        "suggestions": [r['suggestion'] for r in results if not r['passed']],
+    }
+
+
+class ReadmeScoreView(APIView):
+    """
+    POST /api/score/
+    Accepts form data and returns a score (0-100), grade,
+    and a list of specific improvement suggestions.
+    No authentication required.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ReadmeScoreSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Invalid input.", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = calculate_score(serializer.validated_data)
+
+        return Response(result, status=status.HTTP_200_OK)

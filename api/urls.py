@@ -1,6 +1,11 @@
 # api/urls.py
 from django.urls import path
-from .views import GitHubLogin, GenerateReadmeView, GitHubSyncView
+from .views import (
+    GitHubLogin,
+    GenerateReadmeView,
+    GitHubSyncView,
+    ReadmeScoreView,
+)
 
 urlpatterns = [
     # ── Auth ──────────────────────────────────────────────────────────────
@@ -15,16 +20,15 @@ urlpatterns = [
     # Part 10: POST /api/github/push/
     # path('github/push/', GitHubPushView.as_view(), name='github_push'),
 
+    # ── README Score ──────────────────────────────────────────────────────
+    path('score/', ReadmeScoreView.as_view(), name='readme_score'),
+
     # ── Gallery ───────────────────────────────────────────────────────────
     # Part 8: GET  /api/gallery/
     # path('gallery/', GalleryListView.as_view(), name='gallery_list'),
 
     # Part 8: POST /api/gallery/publish/
     # path('gallery/publish/', PublishReadmeView.as_view(), name='gallery_publish'),
-
-    # ── README Score ──────────────────────────────────────────────────────
-    # Part 7: POST /api/score/
-    # path('score/', ReadmeScoreView.as_view(), name='readme_score'),
 
     # ── Shareable Preview ─────────────────────────────────────────────────
     # Part 12: POST /api/preview/create/
