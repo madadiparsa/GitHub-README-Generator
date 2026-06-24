@@ -8,6 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 SECRET_KEY = os.environ.get('SECRET_KEY')
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 
 DEBUG = True
 
