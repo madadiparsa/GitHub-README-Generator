@@ -11,6 +11,7 @@ import SkillsPicker from '../components/SkillsPicker';
 import SocialLinksPicker from '../components/SocialLinksPicker';
 import TemplateSelector from '../components/TemplateSelector';
 import AIGenerator from '../components/AIGenerator';
+import GitHubSync from '../components/GitHubSync';
 
 const SECTION_NAMES = {
   header:      'Header & Title',
@@ -57,7 +58,7 @@ const Editor = () => {
   const [markdown, setMarkdown]               = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [aiMarkdown, setAiMarkdown]           = useState(null);
-  const [previewMode, setPreviewMode]         = useState('generated'); // 'generated' | 'ai'
+  const [previewMode, setPreviewMode]         = useState('generated');
 
   // 1. Check auth + prefill from stored GitHub user
   useEffect(() => {
@@ -108,8 +109,9 @@ const Editor = () => {
     setMarkdown(generateMarkdown(formData));
   }, [formData]);
 
-  // The markdown shown in the preview panel — either AI-generated or live
-  const displayMarkdown = previewMode === 'ai' && aiMarkdown ? aiMarkdown : markdown;
+  const displayMarkdown = previewMode === 'ai' && aiMarkdown
+    ? aiMarkdown
+    : markdown;
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -123,6 +125,40 @@ const Editor = () => {
   const handleAIGenerated = (generatedMarkdown) => {
     setAiMarkdown(generatedMarkdown);
     setPreviewMode('ai');
+  };
+
+  // ── GitHub Sync callback ──────────────────────────────────────────────────
+  const handleGitHubSync = (syncData) => {
+    const { profile, projects, suggested_skills } = syncData;
+
+    setFormData((prev) => ({
+      ...prev,
+      // Profile fields
+      name:           profile.name           || prev.name,
+      githubUsername: profile.login          || prev.githubUsername,
+      description:    profile.bio            || prev.description,
+      email:          profile.email          || prev.email,
+
+      // Merge suggested skills with existing — deduplicate
+      skills: [...new Set([...prev.skills, ...suggested_skills])],
+
+      // Import top repos as projects — merge, don't overwrite existing
+      projects: [
+        ...prev.projects,
+        ...projects.filter(
+          (p) => !prev.projects.some((ep) => ep.name === p.name)
+        ),
+      ],
+
+      // Social links from GitHub profile
+      socialLinks: {
+        ...prev.socialLinks,
+        github:  profile.login          || prev.socialLinks.github,
+        twitter: profile.twitter_username || prev.socialLinks.twitter,
+        website: profile.blog            || prev.socialLinks.website,
+        email:   profile.email           || prev.socialLinks.email,
+      },
+    }));
   };
 
   // ── Projects helpers ──────────────────────────────────────────────────────
@@ -149,7 +185,7 @@ const Editor = () => {
     }));
   };
 
-  // ── Drag-and-drop section reorder ─────────────────────────────────────────
+  // ── Drag-and-drop ─────────────────────────────────────────────────────────
   const handleDragStart = (e, index) => {
     e.dataTransfer.setData('dragIndex', index);
   };
@@ -166,7 +202,7 @@ const Editor = () => {
     setFormData((prev) => ({ ...prev, sections: newSections }));
   };
 
-  // ── Export actions ────────────────────────────────────────────────────────
+  // ── Export ────────────────────────────────────────────────────────────────
   const handleCopy = () => {
     navigator.clipboard.writeText(displayMarkdown);
     alert('Markdown copied to clipboard! ✅');
@@ -204,11 +240,14 @@ const Editor = () => {
 
             {/* ── AI Generator ── */}
             <div className="mb-4">
-              <h6 className="fw-bold mb-3" style={{
-                background: 'linear-gradient(135deg, #6366f1, #ec4899)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}>
+              <h6
+                className="fw-bold mb-3"
+                style={{
+                  background:            'linear-gradient(135deg, #6366f1, #ec4899)',
+                  WebkitBackgroundClip:  'text',
+                  WebkitTextFillColor:   'transparent',
+                }}
+              >
                 <i className="bi bi-stars me-1"></i> AI Generation
               </h6>
               <AIGenerator
@@ -216,6 +255,26 @@ const Editor = () => {
                 onGenerated={handleAIGenerated}
               />
             </div>
+
+            {/* ── GitHub Sync (authenticated users only) ── */}
+            {isAuthenticated && (
+              <div className="mb-4">
+                <h6
+                  className="fw-bold mb-3"
+                  style={{
+                    background:           'linear-gradient(135deg, #10b981, #06b6d4)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor:  'transparent',
+                  }}
+                >
+                  <i className="bi bi-github me-1"></i> GitHub Sync
+                </h6>
+                <GitHubSync
+                  onSync={handleGitHubSync}
+                  githubUsername={formData.githubUsername}
+                />
+              </div>
+            )}
 
             <form>
 
@@ -250,7 +309,9 @@ const Editor = () => {
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="form-label text-secondary fw-medium">Subtitle / Catchphrase</label>
+                  <label className="form-label text-secondary fw-medium">
+                    Subtitle / Catchphrase
+                  </label>
                   <input
                     type="text"
                     className="form-control"
@@ -452,7 +513,10 @@ const Editor = () => {
                     checked={formData.showStats}
                     onChange={handleInputChange}
                   />
-                  <label className="form-check-label text-secondary" htmlFor="showStats">
+                  <label
+                    className="form-check-label text-secondary"
+                    htmlFor="showStats"
+                  >
                     Show GitHub Stats Card
                   </label>
                 </div>
@@ -527,7 +591,6 @@ const Editor = () => {
                   <i className="bi bi-eye text-primary"></i> Live Preview
                 </h5>
 
-                {/* Toggle: Generated vs AI */}
                 {aiMarkdown && (
                   <div
                     className="d-flex rounded-pill overflow-hidden border"

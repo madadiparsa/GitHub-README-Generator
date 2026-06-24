@@ -7,9 +7,9 @@ from dj_rest_auth.registration.views import SocialLoginView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from groq import Groq
-from .serializers import GenerateReadmeSerializer
+from .serializers import GenerateReadmeSerializer, GitHubSyncSerializer
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +35,6 @@ class GitHubLogin(SocialLoginView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        # Exchange the one-time code for a GitHub access token
         token_response = requests.post(
             "https://github.com/login/oauth/access_token",
             headers={"Accept": "application/json"},
@@ -56,9 +55,6 @@ class GitHubLogin(SocialLoginView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ Fix: request.data is an immutable QueryDict after DRF parses it.
-        # Copy it into a plain mutable dict and override request.data via the
-        # private _full_data attribute so super().post() can read the token.
         mutable_data                 = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         mutable_data["access_token"] = access_token
         request._full_data           = mutable_data
@@ -71,23 +67,18 @@ class GitHubLogin(SocialLoginView):
 # ---------------------------------------------------------------------------
 
 def build_prompt(data):
-    """
-    Builds a detailed prompt for the Groq LLM based on the
-    form data submitted by the user.
-    """
-    name            = data.get('name', '')
-    subtitle        = data.get('subtitle', '')
-    description     = data.get('description', '')
-    bio             = data.get('bio', '')
+    name             = data.get('name', '')
+    subtitle         = data.get('subtitle', '')
+    description      = data.get('description', '')
+    bio              = data.get('bio', '')
     current_learning = data.get('currentLearning', '')
-    github_username = data.get('githubUsername', '')
-    skills          = data.get('skills', [])
-    projects        = data.get('projects', [])
-    social_links    = data.get('socialLinks', {})
-    template        = data.get('template', 'modern')
-    user_prompt     = data.get('prompt', '')
+    github_username  = data.get('githubUsername', '')
+    skills           = data.get('skills', [])
+    projects         = data.get('projects', [])
+    social_links     = data.get('socialLinks', {})
+    template         = data.get('template', 'modern')
+    user_prompt      = data.get('prompt', '')
 
-    # Build projects description
     projects_text = ''
     if projects:
         projects_text = '\n'.join([
@@ -96,17 +87,14 @@ def build_prompt(data):
             for p in projects if p.get('name')
         ])
 
-    # Build social links description
     social_text = ''
     if social_links:
         social_text = ', '.join([
             f"{k}: {v}" for k, v in social_links.items() if v and v.strip()
         ])
 
-    # Build skills description
     skills_text = ', '.join(skills) if skills else ''
 
-    # Template style guidance
     template_guidance = {
         'modern': (
             "Use a modern style with centered HTML headings, shields.io badge-style "
@@ -125,7 +113,7 @@ def build_prompt(data):
         ),
     }.get(template, '')
 
-    prompt = f"""You are an expert GitHub profile README writer. Generate a complete, 
+    prompt = f"""You are an expert GitHub profile README writer. Generate a complete,
 professional, and engaging GitHub profile README in Markdown format.
 
 ## User Information
@@ -160,16 +148,10 @@ professional, and engaging GitHub profile README in Markdown format.
 - Use the user's actual name, skills, and projects — do not invent information
 - If a field is "Not provided", skip that section gracefully
 """
-
     return prompt
 
 
 class GenerateReadmeView(APIView):
-    """
-    POST /api/generate/
-    Accepts form data, calls Groq LLM, returns generated markdown.
-    No authentication required — guests can use basic generation.
-    """
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -183,10 +165,8 @@ class GenerateReadmeView(APIView):
 
         data = serializer.validated_data
 
-        # Build the prompt
         prompt = build_prompt(data)
 
-        # Call Groq API
         try:
             client = Groq(api_key=settings.GROQ_API_KEY)
 
@@ -213,10 +193,8 @@ class GenerateReadmeView(APIView):
 
             generated_markdown = chat_completion.choices[0].message.content
 
-            # Strip accidental code fences if the model adds them anyway
             if generated_markdown.startswith("```"):
                 lines = generated_markdown.split('\n')
-                # Remove first and last fence lines
                 lines = [l for l in lines if not l.strip().startswith("```")]
                 generated_markdown = '\n'.join(lines)
 
@@ -230,3 +208,157 @@ class GenerateReadmeView(APIView):
                 {"error": "AI generation failed.", "detail": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+# ---------------------------------------------------------------------------
+# GitHub Sync
+# ---------------------------------------------------------------------------
+
+class GitHubSyncView(APIView):
+    """
+    POST /api/github/sync/
+    Accepts a GitHub OAuth access token, calls the GitHub API,
+    and returns the user's profile data, top repos, and detected
+    languages so the Editor can auto-populate skills and projects.
+    No Django auth required — the GitHub token IS the credential.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = GitHubSyncSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Invalid input.", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        access_token = serializer.validated_data['access_token']
+        headers      = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept":        "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+        # ── 1. Fetch the authenticated user's profile ─────────────────────
+        try:
+            user_resp = requests.get(
+                "https://api.github.com/user",
+                headers=headers,
+                timeout=10,
+            )
+            user_resp.raise_for_status()
+            github_user = user_resp.json()
+        except requests.RequestException as e:
+            return Response(
+                {"error": "Failed to fetch GitHub user profile.", "detail": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        # ── 2. Fetch the user's public repos (up to 100, sorted by stars) ─
+        try:
+            repos_resp = requests.get(
+                "https://api.github.com/user/repos",
+                headers=headers,
+                params={
+                    "sort":      "pushed",
+                    "direction": "desc",
+                    "per_page":  100,
+                    "type":      "owner",
+                },
+                timeout=10,
+            )
+            repos_resp.raise_for_status()
+            all_repos = repos_resp.json()
+        except requests.RequestException as e:
+            return Response(
+                {"error": "Failed to fetch GitHub repositories.", "detail": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        # ── 3. Extract top repos (non-fork, sorted by stars, top 6) ───────
+        non_fork_repos = [r for r in all_repos if not r.get('fork', False)]
+        top_repos      = sorted(
+            non_fork_repos,
+            key=lambda r: r.get('stargazers_count', 0),
+            reverse=True
+        )[:6]
+
+        projects = [
+            {
+                "name":        repo['name'],
+                "description": repo.get('description') or '',
+                "url":         repo.get('html_url', ''),
+                "tech":        repo.get('language') or '',
+                "stars":       repo.get('stargazers_count', 0),
+            }
+            for repo in top_repos
+        ]
+
+        # ── 4. Detect languages across all repos ──────────────────────────
+        language_counts = {}
+        for repo in all_repos:
+            lang = repo.get('language')
+            if lang:
+                language_counts[lang] = language_counts.get(lang, 0) + 1
+
+        # Sort by frequency and return top 10
+        detected_languages = sorted(
+            language_counts.keys(),
+            key=lambda l: language_counts[l],
+            reverse=True
+        )[:10]
+
+        # ── 5. Map detected languages to skill names in our skills list ───
+        # GitHub uses slightly different names than our skills list,
+        # so we normalise them here.
+        LANGUAGE_MAP = {
+            'JavaScript':   'JavaScript',
+            'TypeScript':   'TypeScript',
+            'Python':       'Python',
+            'Java':         'Java',
+            'Go':           'Go',
+            'Rust':         'Rust',
+            'PHP':          'PHP',
+            'Ruby':         'Ruby on Rails',
+            'C++':          'C++',
+            'C#':           'C#',
+            'CSS':          'CSS3',
+            'HTML':         'HTML5',
+            'Shell':        'Bash',
+            'Dockerfile':   'Docker',
+            'Kotlin':       'Java',
+            'Swift':        'Swift',
+            'Dart':         'Flutter',
+        }
+
+        suggested_skills = list(dict.fromkeys([
+            LANGUAGE_MAP.get(lang, lang)
+            for lang in detected_languages
+            if LANGUAGE_MAP.get(lang, lang)
+        ]))
+
+        # ── 6. Build and return the sync payload ──────────────────────────
+        return Response(
+            {
+                "profile": {
+                    "name":             github_user.get('name') or '',
+                    "login":            github_user.get('login') or '',
+                    "bio":              github_user.get('bio') or '',
+                    "avatar_url":       github_user.get('avatar_url') or '',
+                    "public_repos":     github_user.get('public_repos', 0),
+                    "followers":        github_user.get('followers', 0),
+                    "following":        github_user.get('following', 0),
+                    "blog":             github_user.get('blog') or '',
+                    "twitter_username": github_user.get('twitter_username') or '',
+                    "email":            github_user.get('email') or '',
+                    "location":         github_user.get('location') or '',
+                    "company":          github_user.get('company') or '',
+                },
+                "projects":          projects,
+                "suggested_skills":  suggested_skills,
+                "detected_languages": detected_languages,
+                "repo_count":        len(all_repos),
+            },
+            status=status.HTTP_200_OK
+        )

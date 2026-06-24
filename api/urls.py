@@ -1,6 +1,6 @@
 # api/urls.py
 from django.urls import path
-from .views import GitHubLogin, GenerateReadmeView
+from .views import GitHubLogin, GenerateReadmeView, GitHubSyncView
 
 urlpatterns = [
     # ── Auth ──────────────────────────────────────────────────────────────
@@ -10,8 +10,7 @@ urlpatterns = [
     path('generate/', GenerateReadmeView.as_view(), name='generate_readme'),
 
     # ── GitHub Integration ────────────────────────────────────────────────
-    # Part 5: POST /api/github/sync/
-    # path('github/sync/', GitHubSyncView.as_view(), name='github_sync'),
+    path('github/sync/', GitHubSyncView.as_view(), name='github_sync'),
 
     # Part 10: POST /api/github/push/
     # path('github/push/', GitHubPushView.as_view(), name='github_push'),
