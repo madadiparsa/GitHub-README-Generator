@@ -10,6 +10,7 @@ import { DEFAULT_TEMPLATE_ID } from '../utils/templates';
 import SkillsPicker from '../components/SkillsPicker';
 import SocialLinksPicker from '../components/SocialLinksPicker';
 import TemplateSelector from '../components/TemplateSelector';
+import AIGenerator from '../components/AIGenerator';
 
 const SECTION_NAMES = {
   header:      'Header & Title',
@@ -55,6 +56,8 @@ const Editor = () => {
   const [formData, setFormData]               = useState(DEFAULT_FORM_DATA);
   const [markdown, setMarkdown]               = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [aiMarkdown, setAiMarkdown]           = useState(null);
+  const [previewMode, setPreviewMode]         = useState('generated'); // 'generated' | 'ai'
 
   // 1. Check auth + prefill from stored GitHub user
   useEffect(() => {
@@ -77,20 +80,17 @@ const Editor = () => {
     }
   }, []);
 
-  // 2. Prefill from Explore page or Templates page navigation state
+  // 2. Prefill from Explore / Templates page navigation state
   useEffect(() => {
     if (!location.state) return;
-
     if (location.state.prefill) {
       setFormData((prev) => ({
         ...prev,
         ...location.state.prefill,
-        // preserve auth-prefilled user data if it was already set
-        name:           location.state.prefill.name || prev.name,
+        name:           location.state.prefill.name           || prev.name,
         githubUsername: location.state.prefill.githubUsername || prev.githubUsername,
       }));
     }
-
     if (location.state.template) {
       setFormData((prev) => ({ ...prev, template: location.state.template }));
     }
@@ -108,12 +108,21 @@ const Editor = () => {
     setMarkdown(generateMarkdown(formData));
   }, [formData]);
 
+  // The markdown shown in the preview panel — either AI-generated or live
+  const displayMarkdown = previewMode === 'ai' && aiMarkdown ? aiMarkdown : markdown;
+
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData((prev) => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
+  };
+
+  // ── AI generation callback ────────────────────────────────────────────────
+  const handleAIGenerated = (generatedMarkdown) => {
+    setAiMarkdown(generatedMarkdown);
+    setPreviewMode('ai');
   };
 
   // ── Projects helpers ──────────────────────────────────────────────────────
@@ -159,13 +168,15 @@ const Editor = () => {
 
   // ── Export actions ────────────────────────────────────────────────────────
   const handleCopy = () => {
-    navigator.clipboard.writeText(markdown);
+    navigator.clipboard.writeText(displayMarkdown);
     alert('Markdown copied to clipboard! ✅');
   };
 
   const handleDownload = () => {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }));
+    a.href = URL.createObjectURL(
+      new Blob([displayMarkdown], { type: 'text/markdown' })
+    );
     a.download = 'README.md';
     document.body.appendChild(a);
     a.click();
@@ -173,7 +184,10 @@ const Editor = () => {
   };
 
   return (
-    <div className="container-fluid px-4 fade-in-up mb-5" style={{ paddingTop: '90px' }}>
+    <div
+      className="container-fluid px-4 fade-in-up mb-5"
+      style={{ paddingTop: '90px' }}
+    >
       <div className="row g-4 h-100">
 
         {/* ── Left: settings panel ── */}
@@ -188,6 +202,21 @@ const Editor = () => {
           >
             <h4 className="fw-bold mb-4">✍️ Customize Profile</h4>
 
+            {/* ── AI Generator ── */}
+            <div className="mb-4">
+              <h6 className="fw-bold mb-3" style={{
+                background: 'linear-gradient(135deg, #6366f1, #ec4899)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>
+                <i className="bi bi-stars me-1"></i> AI Generation
+              </h6>
+              <AIGenerator
+                formData={formData}
+                onGenerated={handleAIGenerated}
+              />
+            </div>
+
             <form>
 
               {/* ── Template ── */}
@@ -198,7 +227,9 @@ const Editor = () => {
                 <TemplateSelector
                   selected={formData.template}
                   isAuthenticated={isAuthenticated}
-                  onChange={(template) => setFormData((prev) => ({ ...prev, template }))}
+                  onChange={(template) =>
+                    setFormData((prev) => ({ ...prev, template }))
+                  }
                 />
               </div>
 
@@ -254,7 +285,9 @@ const Editor = () => {
                   <i className="bi bi-info-circle me-1"></i> About Me
                 </h6>
                 <div className="mb-3">
-                  <label className="form-label text-secondary fw-medium">Currently working on</label>
+                  <label className="form-label text-secondary fw-medium">
+                    Currently working on
+                  </label>
                   <input
                     type="text"
                     className="form-control"
@@ -265,7 +298,9 @@ const Editor = () => {
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="form-label text-secondary fw-medium">Currently learning</label>
+                  <label className="form-label text-secondary fw-medium">
+                    Currently learning
+                  </label>
                   <input
                     type="text"
                     className="form-control"
@@ -308,7 +343,6 @@ const Editor = () => {
                     className="border rounded-3 p-3 mb-3 position-relative"
                     style={{ backgroundColor: 'rgba(127,127,127,0.05)' }}
                   >
-                    {/* Remove button */}
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-danger position-absolute top-0 end-0 m-2 py-0 px-2"
@@ -330,7 +364,6 @@ const Editor = () => {
                         onChange={(e) => updateProject(index, 'name', e.target.value)}
                       />
                     </div>
-
                     <div className="mb-2">
                       <label className="form-label text-secondary small fw-medium mb-1">
                         Short Description
@@ -343,7 +376,6 @@ const Editor = () => {
                         onChange={(e) => updateProject(index, 'description', e.target.value)}
                       />
                     </div>
-
                     <div className="mb-2">
                       <label className="form-label text-secondary small fw-medium mb-1">
                         GitHub / Live URL
@@ -356,7 +388,6 @@ const Editor = () => {
                         onChange={(e) => updateProject(index, 'url', e.target.value)}
                       />
                     </div>
-
                     <div>
                       <label className="form-label text-secondary small fw-medium mb-1">
                         Tech Used
@@ -400,7 +431,9 @@ const Editor = () => {
                   <i className="bi bi-github me-1"></i> GitHub Integration
                 </h6>
                 <div className="mb-3">
-                  <label className="form-label text-secondary fw-medium">GitHub Username</label>
+                  <label className="form-label text-secondary fw-medium">
+                    GitHub Username
+                  </label>
                   <input
                     type="text"
                     className="form-control"
@@ -425,7 +458,9 @@ const Editor = () => {
                 </div>
                 {formData.showStats && (
                   <div className="mb-3">
-                    <label className="form-label text-secondary fw-medium">Stats Theme</label>
+                    <label className="form-label text-secondary fw-medium">
+                      Stats Theme
+                    </label>
                     <select
                       className="form-select"
                       name="theme"
@@ -484,12 +519,48 @@ const Editor = () => {
           >
             {/* Preview toolbar */}
             <div
-              className="d-flex justify-content-between align-items-center p-3 border-bottom"
+              className="d-flex justify-content-between align-items-center p-3 border-bottom flex-wrap gap-2"
               style={{ backgroundColor: 'var(--glass-bg)' }}
             >
-              <h5 className="fw-bold m-0 d-flex align-items-center gap-2">
-                <i className="bi bi-eye text-primary"></i> Live Preview
-              </h5>
+              <div className="d-flex align-items-center gap-2">
+                <h5 className="fw-bold m-0 d-flex align-items-center gap-2">
+                  <i className="bi bi-eye text-primary"></i> Live Preview
+                </h5>
+
+                {/* Toggle: Generated vs AI */}
+                {aiMarkdown && (
+                  <div
+                    className="d-flex rounded-pill overflow-hidden border"
+                    style={{ fontSize: '0.75rem' }}
+                  >
+                    <button
+                      className="btn btn-sm px-3 py-1 rounded-0 border-0 fw-medium"
+                      style={{
+                        backgroundColor: previewMode === 'generated'
+                          ? 'var(--accent-color)' : 'transparent',
+                        color: previewMode === 'generated'
+                          ? '#fff' : 'var(--text-h)',
+                      }}
+                      onClick={() => setPreviewMode('generated')}
+                    >
+                      Form
+                    </button>
+                    <button
+                      className="btn btn-sm px-3 py-1 rounded-0 border-0 fw-medium"
+                      style={{
+                        backgroundColor: previewMode === 'ai'
+                          ? '#6366f1' : 'transparent',
+                        color: previewMode === 'ai'
+                          ? '#fff' : 'var(--text-h)',
+                      }}
+                      onClick={() => setPreviewMode('ai')}
+                    >
+                      <i className="bi bi-stars me-1"></i>AI
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="d-flex gap-2">
                 <button
                   className="btn btn-outline-primary btn-sm d-flex align-items-center gap-2 shadow-sm"
@@ -508,10 +579,13 @@ const Editor = () => {
 
             {/* Preview content */}
             <div className="p-4 overflow-auto flex-grow-1 bg-body">
-              {markdown ? (
+              {displayMarkdown ? (
                 <div className="markdown-preview">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                    {markdown}
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw]}
+                  >
+                    {displayMarkdown}
                   </ReactMarkdown>
                 </div>
               ) : (
