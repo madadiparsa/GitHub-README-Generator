@@ -12,6 +12,7 @@ import SocialLinksPicker from '../components/SocialLinksPicker';
 import TemplateSelector from '../components/TemplateSelector';
 import AIGenerator from '../components/AIGenerator';
 import GitHubSync from '../components/GitHubSync';
+import GitHubPush from '../components/GitHubPush';
 import ReadmeScore from '../components/ReadmeScore';
 import { PublishModal } from './Gallery';
 
@@ -89,22 +90,22 @@ const Editor = () => {
     if (!location.state) return;
 
     if (location.state.prefill) {
+      const { aiContent, ...rest } = location.state.prefill;
       setFormData((prev) => ({
         ...prev,
-        ...location.state.prefill,
-        name:           location.state.prefill.name           || prev.name,
-        githubUsername: location.state.prefill.githubUsername || prev.githubUsername,
+        ...rest,
+        name:           rest.name           || prev.name,
+        githubUsername: rest.githubUsername || prev.githubUsername,
       }));
+      // If forked from gallery, show the raw markdown in AI preview panel
+      if (aiContent) {
+        setAiMarkdown(aiContent);
+        setPreviewMode('ai');
+      }
     }
 
     if (location.state.template) {
       setFormData((prev) => ({ ...prev, template: location.state.template }));
-    }
-
-    // Handle forked content from Gallery — load it into AI preview panel
-    if (location.state.prefill?.aiContent) {
-      setAiMarkdown(location.state.prefill.aiContent);
-      setPreviewMode('ai');
     }
   }, [location.state]);
 
@@ -160,10 +161,10 @@ const Editor = () => {
 
       socialLinks: {
         ...prev.socialLinks,
-        github:  profile.login             || prev.socialLinks.github,
-        twitter: profile.twitter_username  || prev.socialLinks.twitter,
-        website: profile.blog              || prev.socialLinks.website,
-        email:   profile.email             || prev.socialLinks.email,
+        github:  profile.login            || prev.socialLinks.github,
+        twitter: profile.twitter_username || prev.socialLinks.twitter,
+        website: profile.blog             || prev.socialLinks.website,
+        email:   profile.email            || prev.socialLinks.email,
       },
     }));
   };
@@ -278,7 +279,7 @@ const Editor = () => {
               <ReadmeScore formData={formData} />
             </div>
 
-            {/* ── GitHub Sync (authenticated users only) ── */}
+            {/* ── GitHub Sync (authenticated only) ── */}
             {isAuthenticated && (
               <div className="mb-4">
                 <h6
@@ -289,10 +290,30 @@ const Editor = () => {
                     WebkitTextFillColor:  'transparent',
                   }}
                 >
-                  <i className="bi bi-github me-1"></i> GitHub Sync
+                  <i className="bi bi-arrow-repeat me-1"></i> GitHub Sync
                 </h6>
                 <GitHubSync
                   onSync={handleGitHubSync}
+                  githubUsername={formData.githubUsername}
+                />
+              </div>
+            )}
+
+            {/* ── GitHub Push (authenticated only) ── */}
+            {isAuthenticated && (
+              <div className="mb-4">
+                <h6
+                  className="fw-bold mb-3"
+                  style={{
+                    background:           'linear-gradient(135deg, #24292e, #586069)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor:  'transparent',
+                  }}
+                >
+                  <i className="bi bi-cloud-upload me-1"></i> Push to GitHub
+                </h6>
+                <GitHubPush
+                  markdown={displayMarkdown}
                   githubUsername={formData.githubUsername}
                 />
               </div>
@@ -446,7 +467,9 @@ const Editor = () => {
                         className="form-control form-control-sm"
                         placeholder="e.g. Portfolio Website"
                         value={project.name}
-                        onChange={(e) => updateProject(index, 'name', e.target.value)}
+                        onChange={(e) =>
+                          updateProject(index, 'name', e.target.value)
+                        }
                       />
                     </div>
                     <div className="mb-2">
@@ -458,7 +481,9 @@ const Editor = () => {
                         className="form-control form-control-sm"
                         placeholder="e.g. Personal portfolio built with React"
                         value={project.description}
-                        onChange={(e) => updateProject(index, 'description', e.target.value)}
+                        onChange={(e) =>
+                          updateProject(index, 'description', e.target.value)
+                        }
                       />
                     </div>
                     <div className="mb-2">
@@ -470,7 +495,9 @@ const Editor = () => {
                         className="form-control form-control-sm"
                         placeholder="https://github.com/you/project"
                         value={project.url}
-                        onChange={(e) => updateProject(index, 'url', e.target.value)}
+                        onChange={(e) =>
+                          updateProject(index, 'url', e.target.value)
+                        }
                       />
                     </div>
                     <div>
@@ -482,7 +509,9 @@ const Editor = () => {
                         className="form-control form-control-sm"
                         placeholder="e.g. React, Django, PostgreSQL"
                         value={project.tech}
-                        onChange={(e) => updateProject(index, 'tech', e.target.value)}
+                        onChange={(e) =>
+                          updateProject(index, 'tech', e.target.value)
+                        }
                       />
                     </div>
                   </div>
@@ -703,9 +732,7 @@ const Editor = () => {
           markdown={displayMarkdown}
           template={formData.template}
           onClose={() => setShowPublish(false)}
-          onPublished={() => {
-            setShowPublish(false);
-          }}
+          onPublished={() => setShowPublish(false)}
         />
       )}
 

@@ -9,23 +9,22 @@ from .views import (
     PublishReadmeView,
     ForkReadmeView,
     ViewReadmeView,
+    GitHubPushView,
 )
 
 urlpatterns = [
     # ── Auth ──────────────────────────────────────────────────────────────
-    path('auth/github/', GitHubLogin.as_view(), name='github_login'),
+    path('auth/github/',   GitHubLogin.as_view(),      name='github_login'),
 
     # ── AI Generation ─────────────────────────────────────────────────────
-    path('generate/', GenerateReadmeView.as_view(), name='generate_readme'),
+    path('generate/',      GenerateReadmeView.as_view(), name='generate_readme'),
 
     # ── GitHub Integration ────────────────────────────────────────────────
-    path('github/sync/', GitHubSyncView.as_view(), name='github_sync'),
-
-    # Part 10: POST /api/github/push/
-    # path('github/push/', GitHubPushView.as_view(), name='github_push'),
+    path('github/sync/',   GitHubSyncView.as_view(),   name='github_sync'),
+    path('github/push/',   GitHubPushView.as_view(),   name='github_push'),
 
     # ── README Score ──────────────────────────────────────────────────────
-    path('score/', ReadmeScoreView.as_view(), name='readme_score'),
+    path('score/',         ReadmeScoreView.as_view(),  name='readme_score'),
 
     # ── Gallery ───────────────────────────────────────────────────────────
     path('gallery/',                  GalleryListView.as_view(),   name='gallery_list'),

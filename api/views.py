@@ -1,5 +1,6 @@
 # api/views.py
 import requests
+import base64
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from allauth.socialaccount.models import SocialApp
@@ -17,6 +18,7 @@ from .serializers import (
     ReadmeScoreSerializer,
     PublishReadmeSerializer,
     GalleryItemSerializer,
+    GitHubPushSerializer,
 )
 
 
@@ -530,53 +532,39 @@ class ReadmeScoreView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Gallery — List public READMEs
+# Gallery — List
 # ---------------------------------------------------------------------------
 
 class GalleryListView(APIView):
-    """
-    GET /api/gallery/
-    Returns all publicly published READMEs, newest first.
-    Supports optional ?template= and ?search= query params.
-    No authentication required.
-    """
     permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
+        from django.db.models import Q
         queryset = ReadmeTemplate.objects.filter(
             is_public=True
         ).select_related('created_by', 'created_by__profile')
 
-        # Filter by template style
         template_filter = request.query_params.get('template')
         if template_filter and template_filter in ['modern', 'minimalist', 'creative']:
             queryset = queryset.filter(template_id=template_filter)
 
-        # Search by title or author username
         search = request.query_params.get('search', '').strip()
         if search:
             queryset = queryset.filter(
-                models.Q(title__icontains=search) |
-                models.Q(created_by__username__icontains=search)
-            ) if hasattr(queryset, 'filter') else queryset
+                Q(title__icontains=search) |
+                Q(created_by__username__icontains=search)
+            )
 
-        # Limit to 50 most recent
         queryset = queryset[:50]
-
         serializer = GalleryItemSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
-# Gallery — Publish a README
+# Gallery — Publish
 # ---------------------------------------------------------------------------
 
 class PublishReadmeView(APIView):
-    """
-    POST /api/gallery/publish/
-    Saves the current README as a public gallery item.
-    Requires authentication — only logged-in users can publish.
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
@@ -590,7 +578,6 @@ class PublishReadmeView(APIView):
 
         data = serializer.validated_data
 
-        # Check if this user already has a public README — update it
         existing = ReadmeTemplate.objects.filter(
             created_by=request.user,
             is_public=True,
@@ -601,7 +588,7 @@ class PublishReadmeView(APIView):
             existing.content     = data['content']
             existing.template_id = data.get('template', 'modern')
             existing.save()
-            readme = existing
+            readme  = existing
             created = False
         else:
             readme = ReadmeTemplate.objects.create(
@@ -626,30 +613,23 @@ class PublishReadmeView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Gallery — Fork (increment fork count)
+# Gallery — Fork
 # ---------------------------------------------------------------------------
 
 class ForkReadmeView(APIView):
-    """
-    POST /api/gallery/<slug>/fork/
-    Increments the fork_count for a gallery item and returns
-    its content so the frontend can prefill the editor.
-    No authentication required.
-    """
     permission_classes = [AllowAny]
 
     def post(self, request, slug, *args, **kwargs):
         readme = get_object_or_404(ReadmeTemplate, slug=slug, is_public=True)
-
         readme.fork_count += 1
         readme.save(update_fields=['fork_count'])
 
         return Response(
             {
-                "slug":    readme.slug,
-                "title":   readme.title,
-                "content": readme.content,
-                "template": readme.template_id,
+                "slug":       readme.slug,
+                "title":      readme.title,
+                "content":    readme.content,
+                "template":   readme.template_id,
                 "fork_count": readme.fork_count,
             },
             status=status.HTTP_200_OK
@@ -657,16 +637,10 @@ class ForkReadmeView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Gallery — View count (increment on preview open)
+# Gallery — View count
 # ---------------------------------------------------------------------------
 
 class ViewReadmeView(APIView):
-    """
-    POST /api/gallery/<slug>/view/
-    Increments the view_count for a gallery item silently.
-    Called by the frontend whenever a preview is opened.
-    No authentication required.
-    """
     permission_classes = [AllowAny]
 
     def post(self, request, slug, *args, **kwargs):
@@ -674,3 +648,160 @@ class ViewReadmeView(APIView):
         readme.view_count += 1
         readme.save(update_fields=['view_count'])
         return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# GitHub Push — commit README to user's profile repo
+# ---------------------------------------------------------------------------
+
+class GitHubPushView(APIView):
+    """
+    POST /api/github/push/
+    Commits the generated README.md directly to the user's GitHub
+    profile repository (<username>/<username>) using the GitHub
+    Contents API.
+
+    Flow:
+      1. Use the access token to get the authenticated user's login
+      2. Check if the profile repo exists — if not, create it
+      3. Check if README.md already exists in the repo (need its SHA
+         to update it)
+      4. Create or update README.md via a PUT to the contents API
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = GitHubPushSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Invalid input.", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        access_token   = serializer.validated_data['access_token']
+        content        = serializer.validated_data['content']
+        commit_message = serializer.validated_data.get(
+            'commit_message',
+            'Update README.md via README Generator'
+        )
+
+        headers = {
+            "Authorization":        f"Bearer {access_token}",
+            "Accept":               "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+        # ── 1. Get the authenticated user's GitHub login ──────────────────
+        try:
+            user_resp = requests.get(
+                "https://api.github.com/user",
+                headers=headers,
+                timeout=10,
+            )
+            user_resp.raise_for_status()
+            github_user = user_resp.json()
+            username    = github_user.get('login')
+
+            if not username:
+                return Response(
+                    {"error": "Could not determine GitHub username from token."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except requests.RequestException as e:
+            return Response(
+                {"error": "Failed to fetch GitHub user.", "detail": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        profile_repo = username  # GitHub profile repo = <username>/<username>
+
+        # ── 2. Check if the profile repo exists ───────────────────────────
+        repo_resp = requests.get(
+            f"https://api.github.com/repos/{username}/{profile_repo}",
+            headers=headers,
+            timeout=10,
+        )
+
+        if repo_resp.status_code == 404:
+            # Create the profile repo
+            create_resp = requests.post(
+                "https://api.github.com/user/repos",
+                headers=headers,
+                json={
+                    "name":        profile_repo,
+                    "description": "My GitHub profile README",
+                    "private":     False,
+                    "auto_init":   True,
+                },
+                timeout=10,
+            )
+            if create_resp.status_code not in (200, 201):
+                return Response(
+                    {
+                        "error": "Failed to create profile repository.",
+                        "detail": create_resp.json(),
+                    },
+                    status=status.HTTP_502_BAD_GATEWAY
+                )
+
+        elif repo_resp.status_code != 200:
+            return Response(
+                {
+                    "error": "Failed to check profile repository.",
+                    "detail": repo_resp.json(),
+                },
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        # ── 3. Check if README.md already exists (need SHA to update) ─────
+        existing_sha = None
+        file_resp    = requests.get(
+            f"https://api.github.com/repos/{username}/{profile_repo}/contents/README.md",
+            headers=headers,
+            timeout=10,
+        )
+        if file_resp.status_code == 200:
+            existing_sha = file_resp.json().get('sha')
+
+        # ── 4. Base64-encode the content and push ─────────────────────────
+        encoded_content = base64.b64encode(content.encode('utf-8')).decode('utf-8')
+
+        push_payload = {
+            "message": commit_message,
+            "content": encoded_content,
+        }
+        if existing_sha:
+            push_payload["sha"] = existing_sha
+
+        push_resp = requests.put(
+            f"https://api.github.com/repos/{username}/{profile_repo}/contents/README.md",
+            headers=headers,
+            json=push_payload,
+            timeout=15,
+        )
+
+        if push_resp.status_code not in (200, 201):
+            return Response(
+                {
+                    "error":  "Failed to push README to GitHub.",
+                    "detail": push_resp.json(),
+                },
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        push_data = push_resp.json()
+
+        return Response(
+            {
+                "success":     True,
+                "username":    username,
+                "repo":        profile_repo,
+                "commit_sha":  push_data.get('commit', {}).get('sha', ''),
+                "commit_url":  push_data.get('commit', {}).get('html_url', ''),
+                "profile_url": f"https://github.com/{username}",
+                "readme_url":  f"https://github.com/{username}/{profile_repo}/blob/main/README.md",
+                "message":     f"README.md {'updated' if existing_sha else 'created'} successfully!",
+            },
+            status=status.HTTP_200_OK
+        )
