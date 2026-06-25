@@ -64,18 +64,24 @@ class UserProfileAdmin(admin.ModelAdmin):
 # ---------------------------------------------------------------------------
 @admin.register(ReadmeTemplate)
 class ReadmeTemplateAdmin(admin.ModelAdmin):
-    list_display    = ('title', 'created_by', 'is_public', 'created_at', 'updated_at')
-    list_filter     = ('is_public', 'created_at')
-    search_fields   = ('title', 'created_by__username')
+    list_display    = (
+        'title', 'created_by', 'template_id', 'is_public',
+        'fork_count', 'view_count', 'created_at',
+    )
+    list_filter     = ('is_public', 'template_id', 'created_at')
+    search_fields   = ('title', 'created_by__username', 'slug')
     ordering        = ('-created_at',)
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('slug', 'fork_count', 'view_count', 'created_at', 'updated_at')
 
     fieldsets = (
         ('Template Info', {
-            'fields': ('title', 'content', 'created_by'),
+            'fields': ('title', 'content', 'created_by', 'template_id'),
         }),
         ('Visibility', {
             'fields': ('is_public',),
+        }),
+        ('Stats', {
+            'fields': ('slug', 'fork_count', 'view_count'),
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),

@@ -5,6 +5,10 @@ from .views import (
     GenerateReadmeView,
     GitHubSyncView,
     ReadmeScoreView,
+    GalleryListView,
+    PublishReadmeView,
+    ForkReadmeView,
+    ViewReadmeView,
 )
 
 urlpatterns = [
@@ -24,11 +28,10 @@ urlpatterns = [
     path('score/', ReadmeScoreView.as_view(), name='readme_score'),
 
     # ── Gallery ───────────────────────────────────────────────────────────
-    # Part 8: GET  /api/gallery/
-    # path('gallery/', GalleryListView.as_view(), name='gallery_list'),
-
-    # Part 8: POST /api/gallery/publish/
-    # path('gallery/publish/', PublishReadmeView.as_view(), name='gallery_publish'),
+    path('gallery/',                  GalleryListView.as_view(),   name='gallery_list'),
+    path('gallery/publish/',          PublishReadmeView.as_view(), name='gallery_publish'),
+    path('gallery/<str:slug>/fork/',  ForkReadmeView.as_view(),    name='gallery_fork'),
+    path('gallery/<str:slug>/view/',  ViewReadmeView.as_view(),    name='gallery_view'),
 
     # ── Shareable Preview ─────────────────────────────────────────────────
     # Part 12: POST /api/preview/create/

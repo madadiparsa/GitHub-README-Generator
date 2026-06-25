@@ -1,18 +1,22 @@
 # api/views.py
 import requests
 from django.conf import settings
+from django.shortcuts import get_object_or_404
 from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
 from dj_rest_auth.registration.views import SocialLoginView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from groq import Groq
+from .models import ReadmeTemplate, UserProfile
 from .serializers import (
     GenerateReadmeSerializer,
     GitHubSyncSerializer,
     ReadmeScoreSerializer,
+    PublishReadmeSerializer,
+    GalleryItemSerializer,
 )
 
 
@@ -301,23 +305,23 @@ class GitHubSyncView(APIView):
         )[:10]
 
         LANGUAGE_MAP = {
-            'JavaScript':   'JavaScript',
-            'TypeScript':   'TypeScript',
-            'Python':       'Python',
-            'Java':         'Java',
-            'Go':           'Go',
-            'Rust':         'Rust',
-            'PHP':          'PHP',
-            'Ruby':         'Ruby on Rails',
-            'C++':          'C++',
-            'C#':           'C#',
-            'CSS':          'CSS3',
-            'HTML':         'HTML5',
-            'Shell':        'Bash',
-            'Dockerfile':   'Docker',
-            'Kotlin':       'Java',
-            'Swift':        'Swift',
-            'Dart':         'Flutter',
+            'JavaScript': 'JavaScript',
+            'TypeScript': 'TypeScript',
+            'Python':     'Python',
+            'Java':       'Java',
+            'Go':         'Go',
+            'Rust':       'Rust',
+            'PHP':        'PHP',
+            'Ruby':       'Ruby on Rails',
+            'C++':        'C++',
+            'C#':         'C#',
+            'CSS':        'CSS3',
+            'HTML':       'HTML5',
+            'Shell':      'Bash',
+            'Dockerfile': 'Docker',
+            'Kotlin':     'Java',
+            'Swift':      'Swift',
+            'Dart':       'Flutter',
         }
 
         suggested_skills = list(dict.fromkeys([
@@ -355,15 +359,7 @@ class GitHubSyncView(APIView):
 # README Score & Linter
 # ---------------------------------------------------------------------------
 
-# Each rule is a dict with:
-#   key        — the formData field(s) to check
-#   points     — how many points this rule is worth
-#   label      — short display name shown in the UI
-#   suggestion — shown when the rule fails
-#   category   — groups rules in the UI (Essential / Content / Social / Polish)
-
 SCORE_RULES = [
-    # ── Essential (40 pts) ───────────────────────────────────────────────
     {
         "id":         "has_name",
         "category":   "Essential",
@@ -388,8 +384,6 @@ SCORE_RULES = [
         "suggestion": "Set your GitHub username to enable stats cards and links.",
         "check":      lambda d: bool(d.get('githubUsername', '').strip()),
     },
-
-    # ── Content (30 pts) ─────────────────────────────────────────────────
     {
         "id":         "has_description",
         "category":   "Content",
@@ -422,8 +416,6 @@ SCORE_RULES = [
         "suggestion": "Select at least 3 skills from the Tech Stack section.",
         "check":      lambda d: len(d.get('skills', [])) >= 3,
     },
-
-    # ── Projects (15 pts) ────────────────────────────────────────────────
     {
         "id":         "has_projects",
         "category":   "Projects",
@@ -446,8 +438,6 @@ SCORE_RULES = [
             if p.get('name', '').strip()
         ) and len(d.get('projects', [])) > 0,
     },
-
-    # ── Social (10 pts) ──────────────────────────────────────────────────
     {
         "id":         "has_social_links",
         "category":   "Social",
@@ -469,8 +459,6 @@ SCORE_RULES = [
             d.get('socialLinks', {}).get('website', '').strip()
         ),
     },
-
-    # ── Polish (5 pts) ───────────────────────────────────────────────────
     {
         "id":         "has_stats",
         "category":   "Polish",
@@ -485,11 +473,6 @@ TOTAL_POINTS = sum(r['points'] for r in SCORE_RULES)
 
 
 def calculate_score(data):
-    """
-    Runs every rule against the submitted form data and returns
-    a score (0–100), a letter grade, and a list of passing/failing
-    rule results with suggestions for failing ones.
-    """
     earned  = 0
     results = []
 
@@ -531,12 +514,6 @@ def calculate_score(data):
 
 
 class ReadmeScoreView(APIView):
-    """
-    POST /api/score/
-    Accepts form data and returns a score (0-100), grade,
-    and a list of specific improvement suggestions.
-    No authentication required.
-    """
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -549,5 +526,151 @@ class ReadmeScoreView(APIView):
             )
 
         result = calculate_score(serializer.validated_data)
-
         return Response(result, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# Gallery — List public READMEs
+# ---------------------------------------------------------------------------
+
+class GalleryListView(APIView):
+    """
+    GET /api/gallery/
+    Returns all publicly published READMEs, newest first.
+    Supports optional ?template= and ?search= query params.
+    No authentication required.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        queryset = ReadmeTemplate.objects.filter(
+            is_public=True
+        ).select_related('created_by', 'created_by__profile')
+
+        # Filter by template style
+        template_filter = request.query_params.get('template')
+        if template_filter and template_filter in ['modern', 'minimalist', 'creative']:
+            queryset = queryset.filter(template_id=template_filter)
+
+        # Search by title or author username
+        search = request.query_params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(
+                models.Q(title__icontains=search) |
+                models.Q(created_by__username__icontains=search)
+            ) if hasattr(queryset, 'filter') else queryset
+
+        # Limit to 50 most recent
+        queryset = queryset[:50]
+
+        serializer = GalleryItemSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# Gallery — Publish a README
+# ---------------------------------------------------------------------------
+
+class PublishReadmeView(APIView):
+    """
+    POST /api/gallery/publish/
+    Saves the current README as a public gallery item.
+    Requires authentication — only logged-in users can publish.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = PublishReadmeSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Invalid input.", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        data = serializer.validated_data
+
+        # Check if this user already has a public README — update it
+        existing = ReadmeTemplate.objects.filter(
+            created_by=request.user,
+            is_public=True,
+        ).first()
+
+        if existing:
+            existing.title       = data['title']
+            existing.content     = data['content']
+            existing.template_id = data.get('template', 'modern')
+            existing.save()
+            readme = existing
+            created = False
+        else:
+            readme = ReadmeTemplate.objects.create(
+                title       = data['title'],
+                content     = data['content'],
+                template_id = data.get('template', 'modern'),
+                created_by  = request.user,
+                is_public   = True,
+            )
+            created = True
+
+        return Response(
+            {
+                "id":      readme.id,
+                "slug":    readme.slug,
+                "title":   readme.title,
+                "created": created,
+                "message": "README published to gallery!" if created else "Gallery README updated!",
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
+
+
+# ---------------------------------------------------------------------------
+# Gallery — Fork (increment fork count)
+# ---------------------------------------------------------------------------
+
+class ForkReadmeView(APIView):
+    """
+    POST /api/gallery/<slug>/fork/
+    Increments the fork_count for a gallery item and returns
+    its content so the frontend can prefill the editor.
+    No authentication required.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, slug, *args, **kwargs):
+        readme = get_object_or_404(ReadmeTemplate, slug=slug, is_public=True)
+
+        readme.fork_count += 1
+        readme.save(update_fields=['fork_count'])
+
+        return Response(
+            {
+                "slug":    readme.slug,
+                "title":   readme.title,
+                "content": readme.content,
+                "template": readme.template_id,
+                "fork_count": readme.fork_count,
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+# ---------------------------------------------------------------------------
+# Gallery — View count (increment on preview open)
+# ---------------------------------------------------------------------------
+
+class ViewReadmeView(APIView):
+    """
+    POST /api/gallery/<slug>/view/
+    Increments the view_count for a gallery item silently.
+    Called by the frontend whenever a preview is opened.
+    No authentication required.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, slug, *args, **kwargs):
+        readme = get_object_or_404(ReadmeTemplate, slug=slug, is_public=True)
+        readme.view_count += 1
+        readme.save(update_fields=['view_count'])
+        return Response({"ok": True}, status=status.HTTP_200_OK)
