@@ -125,7 +125,7 @@ const IslandNavbar = ({ theme, toggleTheme }) => {
           >
             {/* Nav links */}
             <ul className="navbar-nav mx-auto mb-2 mb-lg-0 align-items-center gap-lg-3">
-              {['Editor', 'Templates', 'Explore'].map((item) => (
+              {['Editor', 'Templates', 'Explore', 'Gallery'].map((item) => (
                 <li className="nav-item" key={item}>
                   <Link
                     className="nav-link"

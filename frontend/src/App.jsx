@@ -6,6 +6,7 @@ import AuthCallback from './pages/AuthCallback';
 import Editor from './pages/Editor';
 import Templates from './pages/Templates';
 import Explore from './pages/Explore';
+import Gallery from './pages/Gallery';
 
 const Home = () => (
   <div className="container text-center mt-5 main-content">
@@ -100,6 +101,7 @@ function App() {
           <Route path="/templates"     element={<Templates />} />
           <Route path="/explore"       element={<Explore />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/gallery" element={<Gallery />} />
         </Routes>
       </div>
     </Router>
