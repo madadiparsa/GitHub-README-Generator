@@ -187,6 +187,10 @@ JAZZMIN_SETTINGS = {
     },
 }
 
+
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
+
 JAZZMIN_UI_TWEAKS = {
     "navbar_small_text":         False,
     "footer_small_text":         False,

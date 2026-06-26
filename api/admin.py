@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.admin import SocialAccountAdmin as AllauthSocialAccountAdmin
-from .models import UserProfile, ReadmeTemplate
+from .models import UserProfile, ReadmeTemplate, SharedPreview
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +107,7 @@ class SocialAccountAdmin(AllauthSocialAccountAdmin):
         return False
 
 
+
 admin.site.unregister(SocialAccount)
 admin.site.register(SocialAccount, SocialAccountAdmin)
 
@@ -117,3 +118,21 @@ admin.site.register(SocialAccount, SocialAccountAdmin)
 admin.site.site_header = 'README Generator Admin'
 admin.site.site_title  = 'README Gen'
 admin.site.index_title = 'Dashboard'
+
+@admin.register(SharedPreview)
+class SharedPreviewAdmin(admin.ModelAdmin):
+    list_display    = ('slug', 'title', 'template', 'created_by', 'view_count', 'created_at', 'expires_at')
+    list_filter     = ('template', 'created_at')
+    search_fields   = ('slug', 'title', 'created_by__username')
+    ordering        = ('-created_at',)
+    readonly_fields = ('slug', 'view_count', 'created_at')
+
+    fieldsets = (
+        ('Preview Info', {
+            'fields': ('slug', 'title', 'content', 'template', 'created_by'),
+        }),
+        ('Stats & Expiry', {
+            'fields': ('view_count', 'expires_at', 'created_at'),
+        }),
+    )
+    

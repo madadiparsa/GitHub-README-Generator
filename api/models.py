@@ -16,7 +16,6 @@ class UserProfile(models.Model):
         return self.user.username
 
 
-# ✅ Auto-create a UserProfile whenever a new User is saved
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
     if created:
@@ -29,16 +28,6 @@ def save_user_profile(sender, instance, **kwargs):
 
 
 class ReadmeTemplate(models.Model):
-    """
-    Stores both user-saved READMEs and publicly published gallery items.
-
-    Fields added for gallery:
-      - slug         : unique shareable identifier (used in preview URLs)
-      - template_id  : which visual template was used (modern / minimalist / creative)
-      - fork_count   : how many times this README has been forked into the editor
-      - view_count   : how many times the public preview has been viewed
-    """
-
     TEMPLATE_CHOICES = [
         ('modern',     'Modern Badges'),
         ('minimalist', 'Minimalist'),
@@ -55,14 +44,11 @@ class ReadmeTemplate(models.Model):
                        related_name='readmes',
                    )
     is_public    = models.BooleanField(default=False)
-
-    # ── Gallery fields ────────────────────────────────────────────────────
     slug         = models.SlugField(
                        max_length=64,
                        unique=True,
                        blank=True,
                        db_index=True,
-                       help_text="Auto-generated unique identifier for shareable preview URLs.",
                    )
     template_id  = models.CharField(
                        max_length=32,
@@ -71,7 +57,6 @@ class ReadmeTemplate(models.Model):
                    )
     fork_count   = models.PositiveIntegerField(default=0)
     view_count   = models.PositiveIntegerField(default=0)
-
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
 
@@ -82,10 +67,67 @@ class ReadmeTemplate(models.Model):
         return self.title
 
     def save(self, *args, **kwargs):
-        # Auto-generate a unique slug if one hasn't been set yet
         if not self.slug:
             self.slug = str(uuid.uuid4()).replace('-', '')[:16]
-            # Ensure uniqueness in the unlikely event of a collision
             while ReadmeTemplate.objects.filter(slug=self.slug).exists():
                 self.slug = str(uuid.uuid4()).replace('-', '')[:16]
+        super().save(*args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Shareable Preview
+# ---------------------------------------------------------------------------
+
+class SharedPreview(models.Model):
+    """
+    Stores a snapshot of a README for a shareable public URL.
+    No authentication required to create or view — anyone can
+    generate a share link directly from the Editor.
+
+    The slug is used in the public URL:
+      /preview/<slug>   → frontend renders it
+      /api/preview/<slug>/ → backend serves the data
+    """
+    TEMPLATE_CHOICES = [
+        ('modern',     'Modern Badges'),
+        ('minimalist', 'Minimalist'),
+        ('creative',   'Creative Banner'),
+    ]
+
+    slug        = models.SlugField(
+                      max_length=24,
+                      unique=True,
+                      db_index=True,
+                  )
+    title       = models.CharField(max_length=255, blank=True, default='')
+    content     = models.TextField()
+    template    = models.CharField(
+                      max_length=32,
+                      choices=TEMPLATE_CHOICES,
+                      default='modern',
+                  )
+    # Optional — set if the creator was authenticated
+    created_by  = models.ForeignKey(
+                      User,
+                      on_delete=models.SET_NULL,
+                      null=True,
+                      blank=True,
+                      related_name='shared_previews',
+                  )
+    view_count  = models.PositiveIntegerField(default=0)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    # Previews expire after 30 days of inactivity
+    expires_at  = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Preview {self.slug} — {self.title or 'Untitled'}"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = str(uuid.uuid4()).replace('-', '')[:12]
+            while SharedPreview.objects.filter(slug=self.slug).exists():
+                self.slug = str(uuid.uuid4()).replace('-', '')[:12]
         super().save(*args, **kwargs)

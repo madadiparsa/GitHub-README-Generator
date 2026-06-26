@@ -3,6 +3,8 @@ import requests
 import base64
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from datetime import timedelta
 from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
 from dj_rest_auth.registration.views import SocialLoginView
@@ -11,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from groq import Groq
-from .models import ReadmeTemplate, UserProfile
+from .models import ReadmeTemplate, UserProfile, SharedPreview
 from .serializers import (
     GenerateReadmeSerializer,
     GitHubSyncSerializer,
@@ -19,6 +21,7 @@ from .serializers import (
     PublishReadmeSerializer,
     GalleryItemSerializer,
     GitHubPushSerializer,
+    PreviewSerializer,
 )
 
 
@@ -555,7 +558,7 @@ class GalleryListView(APIView):
                 Q(created_by__username__icontains=search)
             )
 
-        queryset = queryset[:50]
+        queryset   = queryset[:50]
         serializer = GalleryItemSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -576,8 +579,7 @@ class PublishReadmeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        data = serializer.validated_data
-
+        data     = serializer.validated_data
         existing = ReadmeTemplate.objects.filter(
             created_by=request.user,
             is_public=True,
@@ -651,23 +653,10 @@ class ViewReadmeView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# GitHub Push — commit README to user's profile repo
+# GitHub Push
 # ---------------------------------------------------------------------------
 
 class GitHubPushView(APIView):
-    """
-    POST /api/github/push/
-    Commits the generated README.md directly to the user's GitHub
-    profile repository (<username>/<username>) using the GitHub
-    Contents API.
-
-    Flow:
-      1. Use the access token to get the authenticated user's login
-      2. Check if the profile repo exists — if not, create it
-      3. Check if README.md already exists in the repo (need its SHA
-         to update it)
-      4. Create or update README.md via a PUT to the contents API
-    """
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -692,7 +681,6 @@ class GitHubPushView(APIView):
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
-        # ── 1. Get the authenticated user's GitHub login ──────────────────
         try:
             user_resp = requests.get(
                 "https://api.github.com/user",
@@ -714,9 +702,8 @@ class GitHubPushView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
-        profile_repo = username  # GitHub profile repo = <username>/<username>
+        profile_repo = username
 
-        # ── 2. Check if the profile repo exists ───────────────────────────
         repo_resp = requests.get(
             f"https://api.github.com/repos/{username}/{profile_repo}",
             headers=headers,
@@ -724,7 +711,6 @@ class GitHubPushView(APIView):
         )
 
         if repo_resp.status_code == 404:
-            # Create the profile repo
             create_resp = requests.post(
                 "https://api.github.com/user/repos",
                 headers=headers,
@@ -739,22 +725,20 @@ class GitHubPushView(APIView):
             if create_resp.status_code not in (200, 201):
                 return Response(
                     {
-                        "error": "Failed to create profile repository.",
+                        "error":  "Failed to create profile repository.",
                         "detail": create_resp.json(),
                     },
                     status=status.HTTP_502_BAD_GATEWAY
                 )
-
         elif repo_resp.status_code != 200:
             return Response(
                 {
-                    "error": "Failed to check profile repository.",
+                    "error":  "Failed to check profile repository.",
                     "detail": repo_resp.json(),
                 },
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
-        # ── 3. Check if README.md already exists (need SHA to update) ─────
         existing_sha = None
         file_resp    = requests.get(
             f"https://api.github.com/repos/{username}/{profile_repo}/contents/README.md",
@@ -764,7 +748,6 @@ class GitHubPushView(APIView):
         if file_resp.status_code == 200:
             existing_sha = file_resp.json().get('sha')
 
-        # ── 4. Base64-encode the content and push ─────────────────────────
         encoded_content = base64.b64encode(content.encode('utf-8')).decode('utf-8')
 
         push_payload = {
@@ -802,6 +785,97 @@ class GitHubPushView(APIView):
                 "profile_url": f"https://github.com/{username}",
                 "readme_url":  f"https://github.com/{username}/{profile_repo}/blob/main/README.md",
                 "message":     f"README.md {'updated' if existing_sha else 'created'} successfully!",
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+# ---------------------------------------------------------------------------
+# Shareable Preview — Create
+# ---------------------------------------------------------------------------
+
+class PreviewCreateView(APIView):
+    """
+    POST /api/preview/create/
+    Saves a README snapshot and returns a unique shareable slug.
+    No authentication required — anyone can create a preview link.
+    Preview expires after 30 days.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = PreviewSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Invalid input.", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        data = serializer.validated_data
+
+        # Set expiry 30 days from now
+        expires_at = timezone.now() + timedelta(days=30)
+
+        preview = SharedPreview.objects.create(
+            title      = data.get('title', ''),
+            content    = data['content'],
+            template   = data.get('template', 'modern'),
+            created_by = request.user if request.user.is_authenticated else None,
+            expires_at = expires_at,
+        )
+
+        # Build the full shareable URL
+        frontend_url  = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        shareable_url = f"{frontend_url}/preview/{preview.slug}"
+
+        return Response(
+            {
+                "slug":          preview.slug,
+                "shareable_url": shareable_url,
+                "expires_at":    expires_at.isoformat(),
+                "message":       "Preview link created! Valid for 30 days.",
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+
+# ---------------------------------------------------------------------------
+# Shareable Preview — Retrieve
+# ---------------------------------------------------------------------------
+
+class PreviewRetrieveView(APIView):
+    """
+    GET /api/preview/<slug>/
+    Returns the stored README content for a given slug.
+    Increments the view count on each request.
+    Returns 404 if the preview has expired.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, slug, *args, **kwargs):
+        preview = get_object_or_404(SharedPreview, slug=slug)
+
+        # Check expiry
+        if preview.expires_at and timezone.now() > preview.expires_at:
+            return Response(
+                {"error": "This preview link has expired."},
+                status=status.HTTP_410_GONE
+            )
+
+        # Increment view count
+        preview.view_count += 1
+        preview.save(update_fields=['view_count'])
+
+        return Response(
+            {
+                "slug":       preview.slug,
+                "title":      preview.title,
+                "content":    preview.content,
+                "template":   preview.template,
+                "view_count": preview.view_count,
+                "created_at": preview.created_at.isoformat(),
+                "expires_at": preview.expires_at.isoformat() if preview.expires_at else None,
             },
             status=status.HTTP_200_OK
         )
