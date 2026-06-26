@@ -14,6 +14,7 @@ import AIGenerator from '../components/AIGenerator';
 import GitHubSync from '../components/GitHubSync';
 import GitHubPush from '../components/GitHubPush';
 import ReadmeScore from '../components/ReadmeScore';
+import SharePreview from '../components/SharePreview';
 import { PublishModal } from './Gallery';
 
 const SECTION_NAMES = {
@@ -95,9 +96,8 @@ const Editor = () => {
         ...prev,
         ...rest,
         name:           rest.name           || prev.name,
-        githubUsername: rest.githubUsername || prev.githubUsername,
+        githubUsername: rest.githubUsername  || prev.githubUsername,
       }));
-      // If forked from gallery, show the raw markdown in AI preview panel
       if (aiContent) {
         setAiMarkdown(aiContent);
         setPreviewMode('ai');
@@ -318,6 +318,25 @@ const Editor = () => {
                 />
               </div>
             )}
+
+            {/* ── Share Preview (available to all users) ── */}
+            <div className="mb-4">
+              <h6
+                className="fw-bold mb-3"
+                style={{
+                  background:           'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor:  'transparent',
+                }}
+              >
+                <i className="bi bi-share me-1"></i> Share Preview
+              </h6>
+              <SharePreview
+                markdown={displayMarkdown}
+                template={formData.template}
+                title={formData.name ? `${formData.name}'s README` : ''}
+              />
+            </div>
 
             <form>
 

@@ -7,6 +7,7 @@ import Editor from './pages/Editor';
 import Templates from './pages/Templates';
 import Explore from './pages/Explore';
 import Gallery from './pages/Gallery';
+import PreviewPage from './pages/PreviewPage';
 
 const Home = () => (
   <div className="container text-center mt-5 main-content">
@@ -102,6 +103,7 @@ function App() {
           <Route path="/explore"       element={<Explore />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/gallery" element={<Gallery />} />
+          <Route path="/preview/:slug" element={<PreviewPage />} />
         </Routes>
       </div>
     </Router>
